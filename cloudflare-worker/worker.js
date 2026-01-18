@@ -18,6 +18,10 @@ export default {
       }
     }
 
+    // Media proxy to bypass CORB / hotlink block
+    if (url.pathname === "/api/media") {
+      return proxyMedia(request, url);
+    }
     // API proxy to bypass CORS
     if (url.pathname.startsWith("/api/")) {
       return proxyApi(request, url);
@@ -37,6 +41,43 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 };
+
+async function proxyMedia(request, url) {
+  const target = url.searchParams.get("url");
+  if (!target) return new Response("Missing url", { status: 400 });
+
+  const targetUrl = new URL(target);
+
+  const headers = new Headers();
+  headers.set("User-Agent", request.headers.get("user-agent") || "Mozilla/5.0");
+  headers.set("Accept", "*/*");
+  headers.set("Referer", targetUrl.origin + "/");
+  headers.set("Origin", targetUrl.origin);
+
+  // Support range request (biar video bisa seek)
+  const range = request.headers.get("range");
+  if (range) headers.set("Range", range);
+
+  const res = await fetch(targetUrl.toString(), {
+    method: "GET",
+    headers,
+    cf: { cacheEverything: false },
+  });
+
+  const out = new Headers(res.headers);
+  corsHeaders().forEach((v, k) => out.set(k, v));
+
+  // penting: biar bisa streaming range
+  out.set("accept-ranges", "bytes");
+
+  // jangan dipaksa download
+  out.delete("content-disposition");
+
+  return new Response(res.body, {
+    status: res.status,
+    headers: out,
+  });
+}
 
 async function proxyApi(request, url) {
   const targetPath = url.pathname.replace(/^\/api/, "");
@@ -1173,7 +1214,8 @@ function applyQuality() {
   const prevTime = video.currentTime || 0;
   const wasPaused = video.paused;
 
-  video.src = url;
+  video.src = "/api/media?url=" + 
+  encodeURIComponent(url);
   video.load();
 
   if (prevTime > 0) video.currentTime = prevTime;
