@@ -715,8 +715,15 @@ function esc(s) {
 
 async function jget(path) {
   const res = await fetch(API + path, { headers: { accept: "application/json" }});
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+  let body = null;
+  try { body = await res.json(); } catch {}
+
+  if (!res.ok) {
+    const msg = body?.error || body?.message || ("HTTP " + res.status);
+    throw new Error(msg);
+  }
+
+  return body;
 }
 
 function setStatus(text) {
@@ -1144,6 +1151,22 @@ function buildQualityDropdown() {
   sel.onchange = () => applyQuality();
 }
 
+function normalizeVideoUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has("response-content-disposition")) {
+      const v = u.searchParams.get("response-content-disposition") || "";
+      u.searchParams.set("response-content-disposition", v.replace(/^attachment/i, "inline"));
+    }
+    if (u.searchParams.get("response-content-type") === "application/octet-stream") {
+      u.searchParams.set("response-content-type", "video/mp4");
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function applyQuality() {
   const video = $("videoPlayer");
   const sel = $("qualitySelect");
@@ -1157,6 +1180,8 @@ function applyQuality() {
 
   let url = pick.url || "";
   if (typeof url === "string" && url.startsWith("//")) url = "https:" + url;
+
+  url = normalizeVideoUrl(url);
 
   if (!url) {
     setStatus("Link video kosong");
