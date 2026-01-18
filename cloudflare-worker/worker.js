@@ -22,6 +22,9 @@ export default {
     if (url.pathname === "/api/media") {
       return proxyMedia(request, url);
     }
+    if (url.pathname === "/api/media_info") {
+      return mediaInfo(url);
+    }
     // API proxy to bypass CORS
     if (url.pathname.startsWith("/api/")) {
       return proxyApi(request, url);
@@ -41,6 +44,30 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 };
+
+async function mediaInfo(url) {
+  const target = url.searchParams.get("url");
+  if (!target) return new Response(JSON.stringify({ ok:false, error:"Missing url" }), {
+    status: 400, headers: { "content-type":"application/json; charset=utf-8", ...Object.fromEntries(corsHeaders()) }
+  });
+
+  const res = await fetch(target, { method: "GET" });
+
+  const info = {
+    status: res.status,
+    contentType: res.headers.get("content-type"),
+    contentDisposition: res.headers.get("content-disposition"),
+    acceptRanges: res.headers.get("accept-ranges"),
+    contentLength: res.headers.get("content-length"),
+    location: res.headers.get("location"),
+    finalUrl: res.url
+  };
+
+  return new Response(JSON.stringify(info, null, 2), {
+    status: 200,
+    headers: { "content-type":"application/json; charset=utf-8", ...Object.fromEntries(corsHeaders()) }
+  });
+}
 
 async function proxyMedia(request, url) {
   const target = url.searchParams.get("url");
