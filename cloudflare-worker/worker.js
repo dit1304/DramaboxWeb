@@ -798,13 +798,31 @@ async function loadTenseiList(mode, page, query) {
   if (mode === "search") path = "/tensei/search?q=" + encodeURIComponent(query);
 
   const json = await jget(path);
-  state.list = (json?.data || []).slice(0, 15).map(item => ({
+  const raw = json?.data || [];
+  
+  // Remove duplicates by slug
+  const seen = new Set();
+  const unique = raw.filter(item => {
+    const slug = item.slug || "";
+    if (seen.has(slug)) return false;
+    seen.add(slug);
+    return true;
+  });
+
+  state.list = unique.slice(0, 15).map(item => ({
     id: item.slug || "",
     title: item.title || "Untitled",
-    img: item.img || "",
+    img: upgradeImageQuality(item.img || ""),
     badge: item.status || item.episode || item.type || "Anime",
     type: "tensei"
   }));
+}
+
+// Upgrade Tensei image quality (change resize parameter)
+function upgradeImageQuality(url) {
+  if (!url) return "";
+  // Change resize=247,350 to resize=400,560 for better quality
+  return url.replace(/resize=\\d+,\\d+/, "resize=400,560");
 }
 
 function renderList() {
