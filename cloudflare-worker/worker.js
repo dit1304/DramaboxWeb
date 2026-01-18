@@ -945,10 +945,29 @@ async function loadDramaboxEpisodes(bookId) {
 }
 
 async function loadTenseiEpisodes(slug) {
-  slug = fixTenseiSlug(slug);
+  const original = String(slug || "").trim();
+  const cleaned = original.replace(/^anime/, "");
 
-  const json = await jget("/tensei/detail/" + encodeURIComponent(slug));
-  if (json?.code !== 0) throw new Error(json?.message || "API detail Tensei gagal");
+  // coba detail pakai slug original dulu, kalau 404 baru coba versi cleaned
+  let json = null;
+  try {
+    json = await jget("/tensei/detail/" + encodeURIComponent(original));
+  } catch (e1) {
+    // kalau gagal, coba versi cleaned (kalau beda)
+    if (cleaned && cleaned !== original) {
+      json = await jget("/tensei/detail/" + encodeURIComponent(cleaned));
+      // IMPORTANT: kalau sukses pakai cleaned, simpan currentId ke cleaned
+      state.currentId = cleaned;
+      state.currentSlug = cleaned;
+    } else {
+      throw e1;
+    }
+  }
+
+  // kalau API mengembalikan code != 0
+  if (json?.code != null && json.code !== 0) {
+    throw new Error(json?.message || "API detail Tensei gagal");
+  }
 
   const eps = json?.data?.episodes || [];
   if (!Array.isArray(eps) || !eps.length) throw new Error("Episode kosong");
