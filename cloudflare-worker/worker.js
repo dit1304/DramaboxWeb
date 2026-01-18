@@ -827,7 +827,7 @@ async function loadTenseiList(mode, page, query) {
   });
 
   state.list = unique.slice(0, 15).map(item => ({
-    id: fixTenseiSlug(item.slug || ""),
+    id: item.slug || "",
     title: item.title || "Untitled",
     img: upgradeImageQuality(item.img || ""),
     badge: item.status || item.episode || item.type || "Anime",
