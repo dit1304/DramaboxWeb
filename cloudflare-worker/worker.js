@@ -353,6 +353,11 @@ function htmlPage() {
       color: var(--accent);
     }
 
+    .badge.rose {
+      background: rgba(244,63,94,0.15);
+      color: #f43f5e;
+    }
+
     .play-icon {
       width: 32px;
       height: 32px;
@@ -595,7 +600,10 @@ function htmlPage() {
           <span class="source-icon">🎬</span> Dramabox
         </button>
         <button class="source-tab" data-source="tensei">
-          <span class="source-icon">🎌</span> Tensei Anime
+          <span class="source-icon">🎌</span> Tensei
+        </button>
+        <button class="source-tab" data-source="dramaid">
+          <span class="source-icon">🎭</span> DramaId
         </button>
       </div>
     </div>
@@ -665,6 +673,13 @@ const SOURCES = {
       { id: "home", label: "Home" },
       { id: "ongoing", label: "Ongoing" },
       { id: "completed", label: "Completed" }
+    ]
+  },
+  dramaid: {
+    name: "DramaId",
+    color: "#f43f5e",
+    navTabs: [
+      { id: "home", label: "Home" }
     ]
   }
 };
@@ -766,6 +781,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadDramaboxList(mode, page, query);
     } else if (state.source === "tensei") {
       await loadTenseiList(mode, page, query);
+    } else if (state.source === "dramaid") {
+      await loadDramaidList(mode, page, query);
     }
     renderList();
   } catch (err) {
@@ -825,6 +842,33 @@ function upgradeImageQuality(url) {
   return url.replace(/resize=\\d+,\\d+/, "resize=400,560");
 }
 
+async function loadDramaidList(mode, page, query) {
+  let path = "";
+  if (mode === "home") path = "/dramaid/home?page=" + page;
+  if (mode === "search") path = "/dramaid/search?q=" + encodeURIComponent(query);
+
+  const json = await jget(path);
+  const raw = json?.data || [];
+  
+  // Remove duplicates by slug
+  const seen = new Set();
+  const unique = raw.filter(item => {
+    const slug = item.slug || "";
+    if (seen.has(slug)) return false;
+    seen.add(slug);
+    return true;
+  });
+
+  state.list = unique.slice(0, 15).map(item => ({
+    id: item.slug || "",
+    title: (item.title || "Untitled").replace(/Nonton Drama |Nonton Drakor | Sub Indo|\(\\d+\)/g, "").trim(),
+    img: item.img || item.poster || "",
+    badge: item.negara || item.score || "Drama",
+    extra: item.episode || "",
+    type: "dramaid"
+  }));
+}
+
 function renderList() {
   const grid = $("grid");
   
@@ -840,7 +884,7 @@ function renderList() {
       <div class="card-body">
         <h3 class="card-title">\${esc(item.title)}</h3>
         <div class="card-meta">
-          <span class="badge \${item.type === 'tensei' ? 'cyan' : ''}">\${esc(item.badge)}</span>
+          <span class="badge \${item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : ''}">\${esc(item.badge)}</span>
           <div class="play-icon">▶</div>
         </div>
       </div>
@@ -872,6 +916,8 @@ async function openContent(id, title, type) {
       await loadDramaboxEpisodes(id);
     } else if (type === "tensei") {
       await loadTenseiEpisodes(id);
+    } else if (type === "dramaid") {
+      await loadDramaidEpisodes(id);
     }
     renderEpisodes();
     await loadAndPlay();
@@ -905,6 +951,22 @@ async function loadTenseiEpisodes(slug) {
   state.episodes = eps.map((ep, i) => ({
     index: i,
     slug: ep.slug || "",
+    label: "Ep " + (ep.ep || (i + 1))
+  }));
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
+async function loadDramaidEpisodes(slug) {
+  const json = await jget("/dramaid/detail/" + encodeURIComponent(slug));
+  const eps = json?.data?.episodes || [];
+  
+  state.episodes = eps.map((ep, i) => ({
+    index: i,
+    epNum: ep.ep || (i + 1),
+    slug: slug,
     label: "Ep " + (ep.ep || (i + 1))
   }));
 
@@ -968,6 +1030,8 @@ async function loadAndPlay() {
       await loadDramaboxVideo(ep);
     } else if (state.source === "tensei") {
       await loadTenseiVideo(ep);
+    } else if (state.source === "dramaid") {
+      await loadDramaidVideo(ep);
     }
     
     buildQualityDropdown();
@@ -1005,6 +1069,20 @@ async function loadTenseiVideo(ep) {
     value: i,
     url: q.url || "",
     isDefault: i === 0
+  }));
+}
+
+async function loadDramaidVideo(ep) {
+  const json = await jget("/dramaid/play/" + encodeURIComponent(ep.slug) + "/" + ep.epNum);
+  
+  if (json?.code !== 0) throw new Error("API gagal");
+
+  const streams = json?.data?.streams || [];
+  state.qualities = streams.map((s, i) => ({
+    label: s.quality || ("Quality " + (i + 1)),
+    value: i,
+    url: s.url || "",
+    isDefault: s.quality === "720p" || i === streams.length - 1
   }));
 }
 
