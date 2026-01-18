@@ -1,0 +1,7 @@
+name = "dramabox-panel"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Uncomment and set if you want token protection
+# [vars]
+# PANEL_TOKEN = "your-secret-token-here"
