@@ -1,6 +1,18 @@
-# DramaBox Panel - Cloudflare Worker
+# StreamBox - Multi Source Streaming Panel
 
-Panel streaming DramaBox dengan tampilan modern yang bisa di-deploy ke Cloudflare Workers.
+Panel streaming dengan tampilan modern yang mendukung **multiple sources**:
+- **Dramabox** - Drama Korea, China, dll
+- **Tensei Anime** - Anime subtitle Indonesia
+
+## Fitur
+
+- Pilih sumber dengan mudah (tabs di bagian atas)
+- Tampilan modern dark theme
+- Responsive (mobile-friendly)
+- Video player dengan quality selector
+- Daftar episode lengkap
+- Next/Prev episode navigation
+- Pencarian
 
 ## Cara Deploy via GitHub Actions
 
@@ -32,7 +44,7 @@ Setelah secrets ditambahkan, push perubahan ke branch `main`. GitHub Actions aka
 
 ```bash
 git add .
-git commit -m "Deploy DramaBox panel"
+git commit -m "Deploy multi-source streaming panel"
 git push origin main
 ```
 
@@ -59,12 +71,6 @@ Edit `wrangler.toml` untuk:
 - Mengubah nama worker (`name`)
 - Menambahkan token proteksi (`PANEL_TOKEN`)
 
-## Fitur
+## Menambah Sumber Baru
 
-- Tampilan modern dark theme
-- Responsive (mobile-friendly)
-- Navigasi: For You, Terbaru, Populer
-- Pencarian drama
-- Video player dengan quality selector
-- Daftar episode
-- Next/Prev episode navigation
+Untuk menambah sumber API baru, edit bagian `SOURCES` di worker.js dan tambahkan fungsi load yang sesuai.

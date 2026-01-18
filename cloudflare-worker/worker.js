@@ -1,9 +1,10 @@
 /**
- * Cloudflare Worker - ZERO Dramabox Web Panel (Enhanced UI)
+ * Cloudflare Worker - Multi-Source Streaming Panel
+ * Supports: Dramabox, Tensei (Anime)
  * Deploy via GitHub Actions to Cloudflare Workers
  */
 
-const API_BASE = "https://dramabos.asia/api/dramabox/api";
+const API_BASE = "https://dramabos.asia/api";
 
 export default {
   async fetch(request, env, ctx) {
@@ -42,7 +43,6 @@ async function proxyApi(request, url) {
   const targetUrl = new URL(API_BASE + targetPath);
 
   for (const [k, v] of url.searchParams.entries()) targetUrl.searchParams.set(k, v);
-  if (!targetUrl.searchParams.get("lang")) targetUrl.searchParams.set("lang", "in");
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
@@ -86,7 +86,7 @@ function htmlPage() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DramaBox Stream</title>
+  <title>StreamBox - Multi Source</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -117,7 +117,6 @@ function htmlPage() {
       line-height: 1.5;
     }
 
-    /* Animated background */
     body::before {
       content: '';
       position: fixed;
@@ -130,6 +129,57 @@ function htmlPage() {
     }
 
     .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+    /* Source Selector */
+    .source-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      background: rgba(24,24,27,0.9);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+    }
+
+    .source-label {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .source-tabs {
+      display: flex;
+      gap: 6px;
+    }
+
+    .source-tab {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .source-tab:hover { background: var(--bg-card); color: var(--text); }
+
+    .source-tab.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    .source-icon {
+      font-size: 16px;
+    }
 
     /* Header */
     .header {
@@ -296,6 +346,11 @@ function htmlPage() {
       border-radius: 20px;
       font-size: 12px;
       font-weight: 600;
+    }
+
+    .badge.cyan {
+      background: rgba(6,182,212,0.15);
+      color: var(--accent);
     }
 
     .play-icon {
@@ -516,7 +571,6 @@ function htmlPage() {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Empty state */
     .empty {
       text-align: center;
       padding: 60px 20px;
@@ -528,23 +582,32 @@ function htmlPage() {
       .search-box { max-width: none; }
       .logo { justify-content: center; }
       .nav { justify-content: center; }
+      .source-bar { flex-wrap: wrap; justify-content: center; }
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="source-bar">
+      <span class="source-label">Sumber:</span>
+      <div class="source-tabs">
+        <button class="source-tab active" data-source="dramabox">
+          <span class="source-icon">🎬</span> Dramabox
+        </button>
+        <button class="source-tab" data-source="tensei">
+          <span class="source-icon">🎌</span> Tensei Anime
+        </button>
+      </div>
+    </div>
+
     <header class="header">
       <div class="logo">
         <div class="logo-icon">▶</div>
-        <span class="logo-text">DramaBox</span>
+        <span class="logo-text" id="logoText">Dramabox</span>
       </div>
-      <nav class="nav">
-        <button class="nav-btn active" id="btnForyou">For You</button>
-        <button class="nav-btn" id="btnNew">Terbaru</button>
-        <button class="nav-btn" id="btnRank">Populer</button>
-      </nav>
+      <nav class="nav" id="navTabs"></nav>
       <div class="search-box">
-        <input type="text" class="search-input" id="searchInput" placeholder="Cari drama..." />
+        <input type="text" class="search-input" id="searchInput" placeholder="Cari..." />
         <button class="search-btn" id="btnSearch">Cari</button>
       </div>
     </header>
@@ -583,19 +646,42 @@ function htmlPage() {
 
 <script>
 const API = "/api";
-const ITEMS_PER_PAGE = 15;
+
+// Source configurations
+const SOURCES = {
+  dramabox: {
+    name: "Dramabox",
+    color: "#a855f7",
+    navTabs: [
+      { id: "foryou", label: "For You" },
+      { id: "new", label: "Terbaru" },
+      { id: "rank", label: "Populer" }
+    ]
+  },
+  tensei: {
+    name: "Tensei Anime",
+    color: "#06b6d4",
+    navTabs: [
+      { id: "home", label: "Home" },
+      { id: "ongoing", label: "Ongoing" },
+      { id: "completed", label: "Completed" }
+    ]
+  }
+};
 
 const state = {
+  source: "dramabox",
   mode: "foryou",
   page: 1,
   query: "",
   list: [],
-  currentBook: null,
+  // Player state
+  currentId: null,
+  currentSlug: null,
   currentTitle: "",
-  chapterIndexes: [],
-  currentChapterIndex: 0,
+  episodes: [],
+  currentEpIndex: 0,
   qualities: [],
-  preferredQuality: null,
 };
 
 const $ = id => document.getElementById(id);
@@ -618,36 +704,107 @@ async function jget(path) {
   return res.json();
 }
 
-function pickCover(item) {
-  return item?.cover || item?.bookCover || item?.bookPic || item?.poster || "";
-}
-
-function pickName(item) {
-  return item?.bookName || item?.name || item?.title || "Untitled";
-}
-
-function getEpNumber(idx) { return Number(idx) + 1; }
-
 function setStatus(text) {
   $("statusText").textContent = text;
 }
 
-function saveQuality(bookId, q) {
-  try { localStorage.setItem("q:" + bookId, String(q)); } catch {}
+// ========== SOURCE SWITCHING ==========
+
+function switchSource(source) {
+  if (!SOURCES[source]) return;
+  state.source = source;
+  state.list = [];
+  state.page = 1;
+  state.query = "";
+  
+  // Update UI
+  document.querySelectorAll(".source-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.source === source);
+  });
+  
+  $("logoText").textContent = SOURCES[source].name;
+  $("searchInput").placeholder = "Cari " + SOURCES[source].name + "...";
+  
+  renderNavTabs();
+  
+  // Load default content
+  const firstTab = SOURCES[source].navTabs[0].id;
+  loadList(firstTab, 1);
 }
 
-function loadQuality(bookId) {
-  try {
-    const v = localStorage.getItem("q:" + bookId);
-    return v ? parseInt(v, 10) : null;
-  } catch { return null; }
+function renderNavTabs() {
+  const nav = $("navTabs");
+  const tabs = SOURCES[state.source].navTabs;
+  
+  nav.innerHTML = tabs.map((tab, i) => 
+    \`<button class="nav-btn \${i === 0 ? 'active' : ''}" data-mode="\${tab.id}">\${tab.label}</button>\`
+  ).join("");
+  
+  nav.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.onclick = () => loadList(btn.dataset.mode, 1);
+  });
 }
 
 function setActiveNav(mode) {
-  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
-  if (mode === "foryou") $("btnForyou").classList.add("active");
-  if (mode === "new") $("btnNew").classList.add("active");
-  if (mode === "rank") $("btnRank").classList.add("active");
+  document.querySelectorAll(".nav-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+}
+
+// ========== LIST LOADING ==========
+
+async function loadList(mode, page = 1, query = "") {
+  state.mode = mode;
+  state.page = page;
+  state.query = query;
+  setActiveNav(mode);
+
+  $("grid").innerHTML = '<div class="loading"><div class="spinner"></div>Memuat...</div>';
+
+  try {
+    if (state.source === "dramabox") {
+      await loadDramaboxList(mode, page, query);
+    } else if (state.source === "tensei") {
+      await loadTenseiList(mode, page, query);
+    }
+    renderList();
+  } catch (err) {
+    $("grid").innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
+  }
+}
+
+async function loadDramaboxList(mode, page, query) {
+  let path = "";
+  if (mode === "foryou") path = "/dramabox/api/foryou/" + page;
+  if (mode === "new") path = "/dramabox/api/new/" + page;
+  if (mode === "rank") path = "/dramabox/api/rank/" + page;
+  if (mode === "search") path = "/dramabox/api/search/" + encodeURIComponent(query) + "/" + page;
+
+  const json = await jget(path + "?lang=in");
+  state.list = (json?.data?.list || []).slice(0, 15).map(item => ({
+    id: item.bookId ?? item.id ?? "",
+    title: item.bookName || item.name || item.title || "Untitled",
+    img: item.cover || item.bookCover || item.bookPic || item.poster || "",
+    badge: (item.chapterCount ?? item.chapter_count ?? "-") + " Eps",
+    type: "dramabox"
+  }));
+}
+
+async function loadTenseiList(mode, page, query) {
+  let path = "";
+  if (mode === "home") path = "/tensei/home?page=" + page;
+  if (mode === "ongoing") path = "/tensei/anime?page=" + page + "&status=Ongoing&order=update";
+  if (mode === "completed") path = "/tensei/anime?page=" + page + "&status=Completed&order=update";
+  if (mode === "search") path = "/tensei/search?q=" + encodeURIComponent(query);
+
+  const json = await jget(path);
+  state.list = (json?.data || []).slice(0, 15).map(item => ({
+    id: item.slug || "",
+    title: item.title || "Untitled",
+    img: item.img || "",
+    badge: item.status || item.episode || item.type || "Anime",
+    type: "tensei"
+  }));
 }
 
 function renderList() {
@@ -658,62 +815,33 @@ function renderList() {
     return;
   }
 
-  grid.innerHTML = state.list.map(item => {
-    const id = item.bookId ?? item.id ?? "";
-    const name = pickName(item);
-    const cover = pickCover(item);
-    const eps = item.chapterCount ?? item.chapter_count ?? "-";
-    return \`
-      <div class="card" data-id="\${esc(id)}" data-name="\${esc(name)}" data-cover="\${esc(cover)}">
-        <img class="card-img" src="\${esc(cover)}" alt="\${esc(name)}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'" />
-        <div class="card-body">
-          <h3 class="card-title">\${esc(name)}</h3>
-          <div class="card-meta">
-            <span class="badge">\${eps} Eps</span>
-            <div class="play-icon">▶</div>
-          </div>
+  grid.innerHTML = state.list.map(item => \`
+    <div class="card" data-id="\${esc(item.id)}" data-title="\${esc(item.title)}" data-type="\${item.type}">
+      <img class="card-img" src="\${esc(item.img)}" alt="\${esc(item.title)}" loading="lazy" 
+        onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'" />
+      <div class="card-body">
+        <h3 class="card-title">\${esc(item.title)}</h3>
+        <div class="card-meta">
+          <span class="badge \${item.type === 'tensei' ? 'cyan' : ''}">\${esc(item.badge)}</span>
+          <div class="play-icon">▶</div>
         </div>
       </div>
-    \`;
-  }).join("");
+    </div>
+  \`).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
-    card.onclick = () => openBook(
-      card.dataset.id,
-      card.dataset.name,
-      card.dataset.cover
-    );
+    card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type);
   });
 }
 
-async function loadList(mode, page = 1, query = "") {
-  state.mode = mode;
-  state.page = page;
-  state.query = query;
-  setActiveNav(mode);
+// ========== PLAYER ==========
 
-  $("grid").innerHTML = '<div class="loading"><div class="spinner"></div>Memuat...</div>';
-
-  let path = "";
-  if (mode === "foryou") path = "/foryou/" + page;
-  if (mode === "new") path = "/new/" + page;
-  if (mode === "rank") path = "/rank/" + page;
-  if (mode === "search") path = "/search/" + encodeURIComponent(query) + "/" + page;
-
-  try {
-    const json = await jget(path);
-    state.list = (json?.data?.list || []).slice(0, ITEMS_PER_PAGE);
-    renderList();
-  } catch (err) {
-    $("grid").innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
-  }
-}
-
-async function openBook(bookId, title, cover) {
-  state.currentBook = String(bookId);
+async function openContent(id, title, type) {
+  state.currentId = id;
+  state.currentSlug = id;
   state.currentTitle = title || "Untitled";
-  state.currentChapterIndex = 0;
-  state.chapterIndexes = [];
+  state.episodes = [];
+  state.currentEpIndex = 0;
   state.qualities = [];
 
   $("playerTitle").textContent = title;
@@ -722,22 +850,48 @@ async function openBook(bookId, title, cover) {
   document.body.style.overflow = "hidden";
 
   try {
-    const json = await jget("/chapters/" + encodeURIComponent(bookId));
-    const chapters = json?.data?.chapterList || [];
-    
-    state.chapterIndexes = chapters
-      .map(x => Number(x?.chapterIndex))
-      .filter(n => Number.isFinite(n))
-      .sort((a, b) => a - b);
-
-    if (state.chapterIndexes.length) {
-      state.currentChapterIndex = state.chapterIndexes[0];
+    if (type === "dramabox") {
+      await loadDramaboxEpisodes(id);
+    } else if (type === "tensei") {
+      await loadTenseiEpisodes(id);
     }
-
     renderEpisodes();
     await loadAndPlay();
   } catch (err) {
     toast("Error: " + err.message);
+  }
+}
+
+async function loadDramaboxEpisodes(bookId) {
+  const json = await jget("/dramabox/api/chapters/" + encodeURIComponent(bookId) + "?lang=in");
+  const chapters = json?.data?.chapterList || [];
+  
+  state.episodes = chapters
+    .map(x => ({
+      index: Number(x?.chapterIndex),
+      slug: String(x?.chapterIndex),
+      label: "Ep " + (Number(x?.chapterIndex) + 1)
+    }))
+    .filter(ep => Number.isFinite(ep.index))
+    .sort((a, b) => a.index - b.index);
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
+async function loadTenseiEpisodes(slug) {
+  const json = await jget("/tensei/detail/" + encodeURIComponent(slug));
+  const eps = json?.data?.episodes || [];
+  
+  state.episodes = eps.map((ep, i) => ({
+    index: i,
+    slug: ep.slug || "",
+    label: "Ep " + (ep.ep || (i + 1))
+  }));
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
   }
 }
 
@@ -751,66 +905,89 @@ function closePlayer() {
 
 function renderEpisodes() {
   const grid = $("episodesGrid");
-  const current = state.currentChapterIndex;
+  const current = state.currentEpIndex;
 
-  if (!state.chapterIndexes.length) {
+  if (!state.episodes.length) {
     grid.innerHTML = '<div style="color: var(--text-muted)">Tidak ada episode.</div>';
     return;
   }
 
-  grid.innerHTML = state.chapterIndexes.map(idx => {
-    const ep = getEpNumber(idx);
-    const active = idx === current ? "active" : "";
-    return \`<button class="ep-btn \${active}" data-idx="\${idx}">Ep \${ep}</button>\`;
+  grid.innerHTML = state.episodes.map((ep, i) => {
+    const active = i === current ? "active" : "";
+    return \`<button class="ep-btn \${active}" data-idx="\${i}">\${esc(ep.label)}</button>\`;
   }).join("");
 
   grid.querySelectorAll(".ep-btn").forEach(btn => {
     btn.onclick = () => goToEpisode(Number(btn.dataset.idx));
   });
 
-  $("playerSubtitle").textContent = "Episode " + getEpNumber(current) + " / " + state.chapterIndexes.length;
+  const currentEp = state.episodes[current];
+  $("playerSubtitle").textContent = (currentEp?.label || "Episode " + (current + 1)) + " / " + state.episodes.length;
 }
 
 async function goToEpisode(idx) {
-  if (!state.chapterIndexes.includes(idx)) return;
-  state.currentChapterIndex = idx;
+  if (idx < 0 || idx >= state.episodes.length) return;
+  state.currentEpIndex = idx;
   renderEpisodes();
   await loadAndPlay();
 }
 
 function goRelative(step) {
-  const pos = state.chapterIndexes.indexOf(state.currentChapterIndex);
-  if (pos === -1) return;
-  const next = pos + step;
+  const next = state.currentEpIndex + step;
   if (next < 0) { toast("Sudah episode pertama"); return; }
-  if (next >= state.chapterIndexes.length) { toast("Sudah episode terakhir"); return; }
-  goToEpisode(state.chapterIndexes[next]);
+  if (next >= state.episodes.length) { toast("Sudah episode terakhir"); return; }
+  goToEpisode(next);
 }
 
 async function loadAndPlay() {
-  if (!state.currentBook) return;
+  const ep = state.episodes[state.currentEpIndex];
+  if (!ep) return;
   
-  const ep = getEpNumber(state.currentChapterIndex);
-  setStatus("Memuat Ep " + ep + "...");
+  setStatus("Memuat " + ep.label + "...");
 
   try {
-    const json = await jget(
-      "/watch/player?bookId=" + encodeURIComponent(state.currentBook) +
-      "&index=" + state.currentChapterIndex +
-      "&lang=in"
-    );
-
-    if (!json?.success) throw new Error("API gagal");
-
-    const data = json.data || {};
-    state.qualities = Array.isArray(data.qualities) ? data.qualities : [];
-
+    if (state.source === "dramabox") {
+      await loadDramaboxVideo(ep);
+    } else if (state.source === "tensei") {
+      await loadTenseiVideo(ep);
+    }
+    
     buildQualityDropdown();
     applyQuality();
-    setStatus("Ep " + ep + " siap");
+    setStatus(ep.label + " siap");
   } catch (err) {
     setStatus("Error: " + err.message);
   }
+}
+
+async function loadDramaboxVideo(ep) {
+  const json = await jget(
+    "/dramabox/api/watch/player?bookId=" + encodeURIComponent(state.currentId) +
+    "&index=" + ep.index + "&lang=in"
+  );
+
+  if (!json?.success) throw new Error("API gagal");
+
+  const data = json.data || {};
+  state.qualities = Array.isArray(data.qualities) ? data.qualities.map(q => ({
+    label: q.quality + "p",
+    value: q.quality,
+    url: q.videoPath || q.videoUrl || "",
+    isDefault: q.isDefault === 1
+  })) : [];
+}
+
+async function loadTenseiVideo(ep) {
+  const json = await jget("/tensei/stream/" + encodeURIComponent(ep.slug));
+  
+  if (json?.code !== 0) throw new Error("API gagal");
+
+  state.qualities = (json?.data || []).map((q, i) => ({
+    label: q.quality || ("Quality " + (i + 1)),
+    value: i,
+    url: q.url || "",
+    isDefault: i === 0
+  }));
 }
 
 function buildQualityDropdown() {
@@ -823,40 +1000,32 @@ function buildQualityDropdown() {
   }
 
   sel.disabled = false;
-  const sorted = [...state.qualities].sort((a, b) => (Number(b.quality) || 0) - (Number(a.quality) || 0));
-  const pref = loadQuality(state.currentBook);
 
-  sorted.forEach(q => {
+  state.qualities.forEach((q, i) => {
     const opt = document.createElement("option");
-    opt.value = String(q.quality);
-    opt.textContent = q.quality + "p" + (q.isDefault === 1 ? " *" : "");
+    opt.value = String(i);
+    opt.textContent = q.label + (q.isDefault ? " *" : "");
     sel.appendChild(opt);
   });
 
-  if (pref && sorted.find(x => Number(x.quality) === pref)) {
-    sel.value = String(pref);
-  } else {
-    const def = sorted.find(x => x.isDefault === 1);
-    sel.value = def ? String(def.quality) : "";
-  }
+  const defIdx = state.qualities.findIndex(q => q.isDefault);
+  sel.value = defIdx >= 0 ? String(defIdx) : "0";
 
-  sel.onchange = () => {
-    const val = sel.value;
-    if (val) saveQuality(state.currentBook, parseInt(val, 10));
-    applyQuality();
-  };
+  sel.onchange = () => applyQuality();
 }
 
 function applyQuality() {
   const video = $("videoPlayer");
   const sel = $("qualitySelect");
-  const wantedQ = sel.value ? parseInt(sel.value, 10) : null;
+  const idx = sel.value !== "" ? parseInt(sel.value, 10) : 0;
 
-  const sorted = [...state.qualities].sort((a, b) => (Number(b.quality) || 0) - (Number(a.quality) || 0));
-  let pick = wantedQ ? sorted.find(x => Number(x.quality) === wantedQ) : null;
-  if (!pick) pick = sorted.find(x => x.isDefault === 1) || sorted[0];
+  const pick = state.qualities[idx] || state.qualities[0];
+  if (!pick) {
+    setStatus("Link video kosong");
+    return;
+  }
 
-  let url = pick?.videoPath || pick?.videoUrl || "";
+  let url = pick.url || "";
   if (typeof url === "string" && url.startsWith("//")) url = "https:" + url;
 
   if (!url) {
@@ -874,10 +1043,11 @@ function applyQuality() {
   if (!wasPaused) video.play().catch(() => {});
 }
 
-// Events
-$("btnForyou").onclick = () => loadList("foryou", 1);
-$("btnNew").onclick = () => loadList("new", 1);
-$("btnRank").onclick = () => loadList("rank", 1);
+// ========== EVENTS ==========
+
+document.querySelectorAll(".source-tab").forEach(tab => {
+  tab.onclick = () => switchSource(tab.dataset.source);
+});
 
 $("btnSearch").onclick = () => {
   const q = $("searchInput").value.trim();
@@ -897,8 +1067,8 @@ $("playerOverlay").onclick = e => {
   if (e.target === $("playerOverlay")) closePlayer();
 };
 
-// Init
-loadList("foryou", 1);
+// ========== INIT ==========
+switchSource("dramabox");
 </script>
 </body>
 </html>`;
