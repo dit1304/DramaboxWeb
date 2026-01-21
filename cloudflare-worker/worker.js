@@ -1,6 +1,7 @@
 /**
  * Cloudflare Worker - Multi-Source Streaming Panel
- * Supports: Dramabox, Tensei (Anime)
+ * Supports: Dramabox, Tensei (Anime), DramaId
+ * Features: Pagination, Genre Filter (Tensei)
  * Deploy via GitHub Actions to Cloudflare Workers
  */
 
@@ -18,13 +19,6 @@ export default {
       }
     }
 
-    // Media proxy to bypass CORB / hotlink block
-    if (url.pathname === "/api/media") {
-      return proxyMedia(request, url);
-    }
-    if (url.pathname === "/api/media_info") {
-      return mediaInfo(url);
-    }
     // API proxy to bypass CORS
     if (url.pathname.startsWith("/api/")) {
       return proxyApi(request, url);
@@ -44,67 +38,6 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 };
-
-async function mediaInfo(url) {
-  const target = url.searchParams.get("url");
-  if (!target) return new Response(JSON.stringify({ ok:false, error:"Missing url" }), {
-    status: 400, headers: { "content-type":"application/json; charset=utf-8", ...Object.fromEntries(corsHeaders()) }
-  });
-
-  const res = await fetch(target, { method: "GET" });
-
-  const info = {
-    status: res.status,
-    contentType: res.headers.get("content-type"),
-    contentDisposition: res.headers.get("content-disposition"),
-    acceptRanges: res.headers.get("accept-ranges"),
-    contentLength: res.headers.get("content-length"),
-    location: res.headers.get("location"),
-    finalUrl: res.url
-  };
-
-  return new Response(JSON.stringify(info, null, 2), {
-    status: 200,
-    headers: { "content-type":"application/json; charset=utf-8", ...Object.fromEntries(corsHeaders()) }
-  });
-}
-
-async function proxyMedia(request, url) {
-  const target = url.searchParams.get("url");
-  if (!target) return new Response("Missing url", { status: 400 });
-
-  const targetUrl = new URL(target);
-
-  const headers = new Headers();
-  headers.set("User-Agent", request.headers.get("user-agent") || "Mozilla/5.0");
-  headers.set("Accept", "*/*");
-  headers.set("Referer", targetUrl.origin + "/");
-  headers.set("Origin", targetUrl.origin);
-
-  // Support range request (biar video bisa seek)
-  const range = request.headers.get("range");
-  if (range) headers.set("Range", range);
-
-  const res = await fetch(targetUrl.toString(), {
-    method: "GET",
-    headers,
-    cf: { cacheEverything: false },
-  });
-
-  const out = new Headers(res.headers);
-  corsHeaders().forEach((v, k) => out.set(k, v));
-
-  // penting: biar bisa streaming range
-  out.set("accept-ranges", "bytes");
-
-  // jangan dipaksa download
-  out.delete("content-disposition");
-
-  return new Response(res.body, {
-    status: res.status,
-    headers: out,
-  });
-}
 
 async function proxyApi(request, url) {
   const targetPath = url.pathname.replace(/^\/api/, "");
@@ -176,7 +109,7 @@ function htmlPage() {
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    
+
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg);
@@ -189,7 +122,7 @@ function htmlPage() {
       content: '';
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: 
+      background:
         radial-gradient(ellipse 80% 50% at 20% -20%, var(--primary-glow), transparent),
         radial-gradient(ellipse 60% 40% at 80% 100%, rgba(6,182,212,0.15), transparent);
       pointer-events: none;
@@ -350,6 +283,94 @@ function htmlPage() {
     .search-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 8px 20px var(--primary-glow);
+    }
+
+    /* Genre Filter */
+    .genre-filter {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      background: rgba(24,24,27,0.9);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+    }
+
+    .genre-filter.show {
+      display: flex;
+    }
+
+    .genre-label {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .genre-select {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+      max-width: 300px;
+    }
+
+    .genre-select:hover {
+      border-color: var(--primary);
+    }
+
+    /* Pagination */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      padding: 24px 20px;
+      margin-top: 20px;
+    }
+
+    .page-btn {
+      padding: 10px 16px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+      min-width: 44px;
+    }
+
+    .page-btn:hover:not(:disabled) {
+      background: var(--bg-elevated);
+      border-color: var(--primary);
+    }
+
+    .page-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .page-info {
+      padding: 0 12px;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
     }
 
     /* Grid */
@@ -656,6 +677,8 @@ function htmlPage() {
       .logo { justify-content: center; }
       .nav { justify-content: center; }
       .source-bar { flex-wrap: wrap; justify-content: center; }
+      .genre-filter { flex-wrap: wrap; }
+      .pagination { flex-wrap: wrap; }
     }
   </style>
 </head>
@@ -676,6 +699,13 @@ function htmlPage() {
       </div>
     </div>
 
+    <div class="genre-filter" id="genreFilter">
+      <span class="genre-label">Genre:</span>
+      <select class="genre-select" id="genreSelect">
+        <option value="">Semua Genre</option>
+      </select>
+    </div>
+
     <header class="header">
       <div class="logo">
         <div class="logo-icon">▶</div>
@@ -689,6 +719,8 @@ function htmlPage() {
     </header>
 
     <main id="grid" class="grid"></main>
+
+    <div class="pagination" id="pagination"></div>
   </div>
 
   <div class="player-overlay" id="playerOverlay">
@@ -723,7 +755,6 @@ function htmlPage() {
 <script>
 const API = "/api";
 
-// Source configurations
 const SOURCES = {
   dramabox: {
     name: "Dramabox",
@@ -756,9 +787,11 @@ const state = {
   source: "dramabox",
   mode: "foryou",
   page: 1,
+  totalPages: 1,
   query: "",
+  genre: "",
+  genres: [],
   list: [],
-  // Player state
   currentId: null,
   currentSlug: null,
   currentTitle: "",
@@ -783,41 +816,81 @@ function esc(s) {
 
 async function jget(path) {
   const res = await fetch(API + path, { headers: { accept: "application/json" }});
-  let body = null;
-  try { body = await res.json(); } catch {}
-
-  if (!res.ok) {
-    const msg = body?.error || body?.message || ("HTTP " + res.status);
-    throw new Error(msg);
-  }
-
-  return body;
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
 }
 
 function setStatus(text) {
   $("statusText").textContent = text;
 }
 
+// ========== GENRE MANAGEMENT ==========
+
+async function loadGenres() {
+  try {
+    const json = await jget("/tensei/genres");
+    if (json?.code === 0 && Array.isArray(json.data)) {
+      const seen = new Set();
+      state.genres = json.data.filter(g => {
+        if (!g.slug || seen.has(g.slug)) return false;
+        seen.add(g.slug);
+        return true;
+      });
+      renderGenreSelect();
+    }
+  } catch (err) {
+    console.error("Failed to load genres:", err);
+  }
+}
+
+function renderGenreSelect() {
+  const select = $("genreSelect");
+  select.innerHTML = '<option value="">Semua Genre</option>';
+
+  state.genres.forEach(genre => {
+    const opt = document.createElement("option");
+    opt.value = genre.slug;
+    opt.textContent = genre.name;
+    select.appendChild(opt);
+  });
+
+  select.value = state.genre;
+}
+
+function showGenreFilter(show) {
+  const filter = $("genreFilter");
+  if (show) {
+    filter.classList.add("show");
+  } else {
+    filter.classList.remove("show");
+  }
+}
+
 // ========== SOURCE SWITCHING ==========
 
-function switchSource(source) {
+async function switchSource(source) {
   if (!SOURCES[source]) return;
   state.source = source;
   state.list = [];
   state.page = 1;
   state.query = "";
-  
-  // Update UI
+  state.genre = "";
+
   document.querySelectorAll(".source-tab").forEach(tab => {
     tab.classList.toggle("active", tab.dataset.source === source);
   });
-  
+
   $("logoText").textContent = SOURCES[source].name;
   $("searchInput").placeholder = "Cari " + SOURCES[source].name + "...";
-  
+
+  if (source === "tensei" && state.genres.length === 0) {
+    await loadGenres();
+  }
+
+  showGenreFilter(source === "tensei");
+
   renderNavTabs();
-  
-  // Load default content
+
   const firstTab = SOURCES[source].navTabs[0].id;
   loadList(firstTab, 1);
 }
@@ -825,11 +898,11 @@ function switchSource(source) {
 function renderNavTabs() {
   const nav = $("navTabs");
   const tabs = SOURCES[state.source].navTabs;
-  
-  nav.innerHTML = tabs.map((tab, i) => 
-    \`<button class="nav-btn \${i === 0 ? 'active' : ''}" data-mode="\${tab.id}">\${tab.label}</button>\`
+
+  nav.innerHTML = tabs.map((tab, i) =>
+    `<button class="nav-btn ${i === 0 ? 'active' : ''}" data-mode="${tab.id}">${tab.label}</button>`
   ).join("");
-  
+
   nav.querySelectorAll(".nav-btn").forEach(btn => {
     btn.onclick = () => loadList(btn.dataset.mode, 1);
   });
@@ -838,6 +911,60 @@ function renderNavTabs() {
 function setActiveNav(mode) {
   document.querySelectorAll(".nav-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.mode === mode);
+  });
+}
+
+// ========== PAGINATION ==========
+
+function renderPagination() {
+  const container = $("pagination");
+
+  if (state.mode === "search" || state.totalPages <= 1) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const current = state.page;
+  const total = state.totalPages;
+
+  let html = '';
+
+  html += `<button class="page-btn" ${current <= 1 ? 'disabled' : ''} data-page="${current - 1}">◀ Prev</button>`;
+
+  const maxButtons = 5;
+  let startPage = Math.max(1, current - Math.floor(maxButtons / 2));
+  let endPage = Math.min(total, startPage + maxButtons - 1);
+
+  if (endPage - startPage < maxButtons - 1) {
+    startPage = Math.max(1, endPage - maxButtons + 1);
+  }
+
+  if (startPage > 1) {
+    html += `<button class="page-btn" data-page="1">1</button>`;
+    if (startPage > 2) {
+      html += `<span class="page-info">...</span>`;
+    }
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    html += `<button class="page-btn ${i === current ? 'active' : ''}" data-page="${i}">${i}</button>`;
+  }
+
+  if (endPage < total) {
+    if (endPage < total - 1) {
+      html += `<span class="page-info">...</span>`;
+    }
+    html += `<button class="page-btn" data-page="${total}">${total}</button>`;
+  }
+
+  html += `<button class="page-btn" ${current >= total ? 'disabled' : ''} data-page="${current + 1}">Next ▶</button>`;
+
+  container.innerHTML = html;
+
+  container.querySelectorAll(".page-btn").forEach(btn => {
+    if (!btn.disabled) {
+      btn.onclick = () => loadList(state.mode, parseInt(btn.dataset.page), state.query);
+    }
   });
 }
 
@@ -860,6 +987,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadDramaidList(mode, page, query);
     }
     renderList();
+    renderPagination();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err) {
     $("grid").innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
   }
@@ -880,6 +1009,8 @@ async function loadDramaboxList(mode, page, query) {
     badge: (item.chapterCount ?? item.chapter_count ?? "-") + " Eps",
     type: "dramabox"
   }));
+
+  state.totalPages = mode === "search" ? 1 : 30;
 }
 
 async function loadTenseiList(mode, page, query) {
@@ -889,10 +1020,13 @@ async function loadTenseiList(mode, page, query) {
   if (mode === "completed") path = "/tensei/anime?page=" + page + "&status=Completed&order=update";
   if (mode === "search") path = "/tensei/search?q=" + encodeURIComponent(query);
 
+  if (state.genre && mode !== "search") {
+    path += (path.includes("?") ? "&" : "?") + "genres=" + encodeURIComponent(state.genre);
+  }
+
   const json = await jget(path);
   const raw = json?.data || [];
-  
-  // Remove duplicates by slug
+
   const seen = new Set();
   const unique = raw.filter(item => {
     const slug = item.slug || "";
@@ -908,13 +1042,13 @@ async function loadTenseiList(mode, page, query) {
     badge: item.status || item.episode || item.type || "Anime",
     type: "tensei"
   }));
+
+  state.totalPages = mode === "search" ? 1 : 50;
 }
 
-// Upgrade Tensei image quality (change resize parameter)
 function upgradeImageQuality(url) {
   if (!url) return "";
-  // Change resize=247,350 to resize=400,560 for better quality
-  return url.replace(/resize=\\d+,\\d+/, "resize=400,560");
+  return url.replace(/resize=\d+,\d+/, "resize=400,560");
 }
 
 async function loadDramaidList(mode, page, query) {
@@ -924,8 +1058,7 @@ async function loadDramaidList(mode, page, query) {
 
   const json = await jget(path);
   const raw = json?.data || [];
-  
-  // Remove duplicates by slug
+
   const seen = new Set();
   const unique = raw.filter(item => {
     const slug = item.slug || "";
@@ -936,35 +1069,37 @@ async function loadDramaidList(mode, page, query) {
 
   state.list = unique.slice(0, 15).map(item => ({
     id: item.slug || "",
-    title: (item.title || "Untitled").replace(/Nonton Drama |Nonton Drakor | Sub Indo|\(\\d+\)/g, "").trim(),
+    title: (item.title || "Untitled").replace(/Nonton Drama |Nonton Drakor | Sub Indo|\(\d+\)/g, "").trim(),
     img: item.img || item.poster || "",
     badge: item.negara || item.score || "Drama",
     extra: item.episode || "",
     type: "dramaid"
   }));
+
+  state.totalPages = mode === "search" ? 1 : 20;
 }
 
 function renderList() {
   const grid = $("grid");
-  
+
   if (!state.list.length) {
     grid.innerHTML = '<div class="empty">Tidak ada data ditemukan.</div>';
     return;
   }
 
-  grid.innerHTML = state.list.map(item => \`
-    <div class="card" data-id="\${esc(item.id)}" data-title="\${esc(item.title)}" data-type="\${item.type}">
-      <img class="card-img" src="\${esc(item.img)}" alt="\${esc(item.title)}" loading="lazy" 
+  grid.innerHTML = state.list.map(item => `
+    <div class="card" data-id="${esc(item.id)}" data-title="${esc(item.title)}" data-type="${item.type}">
+      <img class="card-img" src="${esc(item.img)}" alt="${esc(item.title)}" loading="lazy"
         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'" />
       <div class="card-body">
-        <h3 class="card-title">\${esc(item.title)}</h3>
+        <h3 class="card-title">${esc(item.title)}</h3>
         <div class="card-meta">
-          <span class="badge \${item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : ''}">\${esc(item.badge)}</span>
+          <span class="badge ${item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : ''}">${esc(item.badge)}</span>
           <div class="play-icon">▶</div>
         </div>
       </div>
     </div>
-  \`).join("");
+  `).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
     card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type);
@@ -1004,7 +1139,7 @@ async function openContent(id, title, type) {
 async function loadDramaboxEpisodes(bookId) {
   const json = await jget("/dramabox/api/chapters/" + encodeURIComponent(bookId) + "?lang=in");
   const chapters = json?.data?.chapterList || [];
-  
+
   state.episodes = chapters
     .map(x => ({
       index: Number(x?.chapterIndex),
@@ -1020,32 +1155,8 @@ async function loadDramaboxEpisodes(bookId) {
 }
 
 async function loadTenseiEpisodes(slug) {
-  const original = String(slug || "").trim();
-  const cleaned = original.replace(/^anime/, "");
-
-  // coba detail pakai slug original dulu, kalau 404 baru coba versi cleaned
-  let json = null;
-  try {
-    json = await jget("/tensei/detail/" + encodeURIComponent(original));
-  } catch (e1) {
-    // kalau gagal, coba versi cleaned (kalau beda)
-    if (cleaned && cleaned !== original) {
-      json = await jget("/tensei/detail/" + encodeURIComponent(cleaned));
-      // IMPORTANT: kalau sukses pakai cleaned, simpan currentId ke cleaned
-      state.currentId = cleaned;
-      state.currentSlug = cleaned;
-    } else {
-      throw e1;
-    }
-  }
-
-  // kalau API mengembalikan code != 0
-  if (json?.code != null && json.code !== 0) {
-    throw new Error(json?.message || "API detail Tensei gagal");
-  }
-
+  const json = await jget("/tensei/detail/" + encodeURIComponent(slug));
   const eps = json?.data?.episodes || [];
-  if (!Array.isArray(eps) || !eps.length) throw new Error("Episode kosong");
 
   state.episodes = eps.map((ep, i) => ({
     index: i,
@@ -1053,13 +1164,15 @@ async function loadTenseiEpisodes(slug) {
     label: "Ep " + (ep.ep || (i + 1))
   }));
 
-  state.currentEpIndex = 0;
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
 }
 
 async function loadDramaidEpisodes(slug) {
   const json = await jget("/dramaid/detail/" + encodeURIComponent(slug));
   const eps = json?.data?.episodes || [];
-  
+
   state.episodes = eps.map((ep, i) => ({
     index: i,
     epNum: ep.ep || (i + 1),
@@ -1091,7 +1204,7 @@ function renderEpisodes() {
 
   grid.innerHTML = state.episodes.map((ep, i) => {
     const active = i === current ? "active" : "";
-    return \`<button class="ep-btn \${active}" data-idx="\${i}">\${esc(ep.label)}</button>\`;
+    return `<button class="ep-btn ${active}" data-idx="${i}">${esc(ep.label)}</button>`;
   }).join("");
 
   grid.querySelectorAll(".ep-btn").forEach(btn => {
@@ -1119,7 +1232,7 @@ function goRelative(step) {
 async function loadAndPlay() {
   const ep = state.episodes[state.currentEpIndex];
   if (!ep) return;
-  
+
   setStatus("Memuat " + ep.label + "...");
 
   try {
@@ -1130,7 +1243,7 @@ async function loadAndPlay() {
     } else if (state.source === "dramaid") {
       await loadDramaidVideo(ep);
     }
-    
+
     buildQualityDropdown();
     applyQuality();
     setStatus(ep.label + " siap");
@@ -1158,7 +1271,7 @@ async function loadDramaboxVideo(ep) {
 
 async function loadTenseiVideo(ep) {
   const json = await jget("/tensei/stream/" + encodeURIComponent(ep.slug));
-  
+
   if (json?.code !== 0) throw new Error("API gagal");
 
   state.qualities = (json?.data || []).map((q, i) => ({
@@ -1169,21 +1282,9 @@ async function loadTenseiVideo(ep) {
   }));
 }
 
-function fixTenseiSlug(slug) {
-  slug = String(slug || "").trim();
-
-  // kasus slug error yang ada prefix "anime"
-  slug = slug.replace(/^anime/, "");
-
-  // bersihin double dash/space aneh (opsional)
-  slug = slug.replace(/\s+/g, "-").replace(/-+/g, "-");
-
-  return slug;
-}
-
 async function loadDramaidVideo(ep) {
   const json = await jget("/dramaid/play/" + encodeURIComponent(ep.slug) + "/" + ep.epNum);
-  
+
   if (json?.code !== 0) throw new Error("API gagal");
 
   const streams = json?.data?.streams || [];
@@ -1241,8 +1342,7 @@ function applyQuality() {
   const prevTime = video.currentTime || 0;
   const wasPaused = video.paused;
 
-  video.src = "/api/media?url=" + 
-  encodeURIComponent(url);
+  video.src = url;
   video.load();
 
   if (prevTime > 0) video.currentTime = prevTime;
@@ -1263,6 +1363,11 @@ $("btnSearch").onclick = () => {
 
 $("searchInput").onkeydown = e => {
   if (e.key === "Enter") $("btnSearch").click();
+};
+
+$("genreSelect").onchange = () => {
+  state.genre = $("genreSelect").value;
+  loadList(state.mode, 1);
 };
 
 $("closePlayer").onclick = closePlayer;
