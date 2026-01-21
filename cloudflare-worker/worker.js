@@ -900,7 +900,7 @@ function renderNavTabs() {
   const tabs = SOURCES[state.source].navTabs;
 
   nav.innerHTML = tabs.map((tab, i) =>
-    `<button class="nav-btn ${i === 0 ? 'active' : ''}" data-mode="${tab.id}">${tab.label}</button>`
+    "<button class=\\"nav-btn " + (i === 0 ? 'active' : '') + "\\" data-mode=\\"" + tab.id + "\\">" + tab.label + "</button>"
   ).join("");
 
   nav.querySelectorAll(".nav-btn").forEach(btn => {
@@ -929,7 +929,7 @@ function renderPagination() {
 
   let html = '';
 
-  html += `<button class="page-btn" ${current <= 1 ? 'disabled' : ''} data-page="${current - 1}">◀ Prev</button>`;
+  html += "<button class=\\"page-btn\\" " + (current <= 1 ? 'disabled' : '') + " data-page=\\"" + (current - 1) + "\\">◀ Prev</button>";
 
   const maxButtons = 5;
   let startPage = Math.max(1, current - Math.floor(maxButtons / 2));
@@ -940,24 +940,24 @@ function renderPagination() {
   }
 
   if (startPage > 1) {
-    html += `<button class="page-btn" data-page="1">1</button>`;
+    html += "<button class=\\"page-btn\\" data-page=\\"1\\">1</button>";
     if (startPage > 2) {
-      html += `<span class="page-info">...</span>`;
+      html += "<span class=\\"page-info\\">...</span>";
     }
   }
 
   for (let i = startPage; i <= endPage; i++) {
-    html += `<button class="page-btn ${i === current ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    html += "<button class=\\"page-btn " + (i === current ? 'active' : '') + "\\" data-page=\\"" + i + "\\">" + i + "</button>";
   }
 
   if (endPage < total) {
     if (endPage < total - 1) {
-      html += `<span class="page-info">...</span>`;
+      html += "<span class=\\"page-info\\">...</span>";
     }
-    html += `<button class="page-btn" data-page="${total}">${total}</button>`;
+    html += "<button class=\\"page-btn\\" data-page=\\"" + total + "\\">" + total + "</button>";
   }
 
-  html += `<button class="page-btn" ${current >= total ? 'disabled' : ''} data-page="${current + 1}">Next ▶</button>`;
+  html += "<button class=\\"page-btn\\" " + (current >= total ? 'disabled' : '') + " data-page=\\"" + (current + 1) + "\\">Next ▶</button>";
 
   container.innerHTML = html;
 
@@ -1087,19 +1087,19 @@ function renderList() {
     return;
   }
 
-  grid.innerHTML = state.list.map(item => `
-    <div class="card" data-id="${esc(item.id)}" data-title="${esc(item.title)}" data-type="${item.type}">
-      <img class="card-img" src="${esc(item.img)}" alt="${esc(item.title)}" loading="lazy"
-        onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'" />
-      <div class="card-body">
-        <h3 class="card-title">${esc(item.title)}</h3>
-        <div class="card-meta">
-          <span class="badge ${item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : ''}">${esc(item.badge)}</span>
-          <div class="play-icon">▶</div>
-        </div>
-      </div>
-    </div>
-  `).join("");
+  grid.innerHTML = state.list.map(item =>
+    "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
+      "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
+        "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
+      "<div class=\\"card-body\\">" +
+        "<h3 class=\\"card-title\\">" + esc(item.title) + "</h3>" +
+        "<div class=\\"card-meta\\">" +
+          "<span class=\\"badge " + (item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : '') + "\\">" + esc(item.badge) + "</span>" +
+          "<div class=\\"play-icon\\">▶</div>" +
+        "</div>" +
+      "</div>" +
+    "</div>"
+  ).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
     card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type);
@@ -1204,7 +1204,7 @@ function renderEpisodes() {
 
   grid.innerHTML = state.episodes.map((ep, i) => {
     const active = i === current ? "active" : "";
-    return `<button class="ep-btn ${active}" data-idx="${i}">${esc(ep.label)}</button>`;
+    return "<button class=\\"ep-btn " + active + "\\" data-idx=\\"" + i + "\\">" + esc(ep.label) + "</button>";
   }).join("");
 
   grid.querySelectorAll(".ep-btn").forEach(btn => {
