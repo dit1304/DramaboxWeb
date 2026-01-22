@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker - Multi-Source Streaming Panel
- * Supports: Dramabox, Tensei (Anime), DramaId
+ * Supports: MELOLO, Dramabox, Tensei (Anime), DramaId
  * Features: Pagination, Genre Filter (Tensei)
  * Deploy via GitHub Actions to Cloudflare Workers
  */
@@ -447,6 +447,11 @@ function htmlPage() {
       color: #f43f5e;
     }
 
+    .badge.red {
+      background: rgba(220,38,38,0.15);
+      color: #dc2626;
+    }
+
     .play-icon {
       width: 32px;
       height: 32px;
@@ -687,7 +692,10 @@ function htmlPage() {
     <div class="source-bar">
       <span class="source-label">Sumber:</span>
       <div class="source-tabs">
-        <button class="source-tab active" data-source="dramabox">
+        <button class="source-tab active" data-source="melolo">
+          <span class="source-icon">🔴</span> MELOLO
+        </button>
+        <button class="source-tab" data-source="dramabox">
           <span class="source-icon">🎬</span> Dramabox
         </button>
         <button class="source-tab" data-source="tensei">
@@ -709,7 +717,7 @@ function htmlPage() {
     <header class="header">
       <div class="logo">
         <div class="logo-icon">▶</div>
-        <span class="logo-text" id="logoText">Dramabox</span>
+        <span class="logo-text" id="logoText">MELOLO</span>
       </div>
       <nav class="nav" id="navTabs"></nav>
       <div class="search-box">
@@ -756,6 +764,13 @@ function htmlPage() {
 const API = "/api";
 
 const SOURCES = {
+  melolo: {
+    name: "MELOLO",
+    color: "#dc2626",
+    navTabs: [
+      { id: "home", label: "Home" }
+    ]
+  },
   dramabox: {
     name: "Dramabox",
     color: "#a855f7",
@@ -784,8 +799,8 @@ const SOURCES = {
 };
 
 const state = {
-  source: "dramabox",
-  mode: "foryou",
+  source: "melolo",
+  mode: "home",
   page: 1,
   totalPages: 1,
   query: "",
@@ -979,7 +994,9 @@ async function loadList(mode, page = 1, query = "") {
   $("grid").innerHTML = '<div class="loading"><div class="spinner"></div>Memuat...</div>';
 
   try {
-    if (state.source === "dramabox") {
+    if (state.source === "melolo") {
+      await loadMeloloList(mode, page, query);
+    } else if (state.source === "dramabox") {
       await loadDramaboxList(mode, page, query);
     } else if (state.source === "tensei") {
       await loadTenseiList(mode, page, query);
@@ -992,6 +1009,25 @@ async function loadList(mode, page = 1, query = "") {
   } catch (err) {
     $("grid").innerHTML = '<div class="empty">Error: ' + esc(err.message) + '</div>';
   }
+}
+
+async function loadMeloloList(mode, page, query) {
+  let path = "";
+  const offset = (page - 1) * 18;
+
+  if (mode === "home") path = "/melolo/api/v1/home?offset=" + offset + "&count=18&lang=id";
+  if (mode === "search") path = "/melolo/api/v1/search?q=" + encodeURIComponent(query) + "&offset=" + offset + "&count=20&lang=id";
+
+  const json = await jget(path);
+  state.list = (json?.data || []).map(item => ({
+    id: item.id ?? "",
+    title: item.name || item.title || "Untitled",
+    img: item.cover || "",
+    badge: (item.episodes ?? 0) + " Eps",
+    type: "melolo"
+  }));
+
+  state.totalPages = mode === "search" ? 1 : 50;
 }
 
 async function loadDramaboxList(mode, page, query) {
@@ -1087,19 +1123,20 @@ function renderList() {
     return;
   }
 
-  grid.innerHTML = state.list.map(item =>
-    "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
+  grid.innerHTML = state.list.map(item => {
+    const badgeClass = item.type === 'melolo' ? 'red' : item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : '';
+    return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
       "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
         "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
       "<div class=\\"card-body\\">" +
         "<h3 class=\\"card-title\\">" + esc(item.title) + "</h3>" +
         "<div class=\\"card-meta\\">" +
-          "<span class=\\"badge " + (item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : '') + "\\">" + esc(item.badge) + "</span>" +
+          "<span class=\\"badge " + badgeClass + "\\">" + esc(item.badge) + "</span>" +
           "<div class=\\"play-icon\\">▶</div>" +
         "</div>" +
       "</div>" +
-    "</div>"
-  ).join("");
+    "</div>";
+  }).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
     card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type);
@@ -1122,7 +1159,9 @@ async function openContent(id, title, type) {
   document.body.style.overflow = "hidden";
 
   try {
-    if (type === "dramabox") {
+    if (type === "melolo") {
+      await loadMeloloEpisodes(id);
+    } else if (type === "dramabox") {
       await loadDramaboxEpisodes(id);
     } else if (type === "tensei") {
       await loadTenseiEpisodes(id);
@@ -1133,6 +1172,23 @@ async function openContent(id, title, type) {
     await loadAndPlay();
   } catch (err) {
     toast("Error: " + err.message);
+  }
+}
+
+async function loadMeloloEpisodes(id) {
+  const json = await jget("/melolo/api/v1/detail/" + encodeURIComponent(id) + "?lang=id");
+  const videos = json?.videos || [];
+
+  state.episodes = videos.map(v => ({
+    index: v.episode - 1,
+    vid: v.vid || "",
+    slug: v.vid || "",
+    label: "Ep " + v.episode,
+    duration: v.duration || 0
+  }));
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
   }
 }
 
@@ -1236,7 +1292,9 @@ async function loadAndPlay() {
   setStatus("Memuat " + ep.label + "...");
 
   try {
-    if (state.source === "dramabox") {
+    if (state.source === "melolo") {
+      await loadMeloloVideo(ep);
+    } else if (state.source === "dramabox") {
       await loadDramaboxVideo(ep);
     } else if (state.source === "tensei") {
       await loadTenseiVideo(ep);
@@ -1249,6 +1307,39 @@ async function loadAndPlay() {
     setStatus(ep.label + " siap");
   } catch (err) {
     setStatus("Error: " + err.message);
+  }
+}
+
+async function loadMeloloVideo(ep) {
+  const json = await jget("/melolo/api/v1/video/" + encodeURIComponent(ep.vid) + "?lang=id");
+
+  if (!json?.url) throw new Error("Video tidak tersedia");
+
+  state.qualities = [{
+    label: "Default",
+    value: 0,
+    url: json.url,
+    isDefault: true
+  }];
+
+  if (json.backup) {
+    state.qualities.push({
+      label: "Backup",
+      value: 1,
+      url: json.backup,
+      isDefault: false
+    });
+  }
+
+  if (Array.isArray(json.list)) {
+    json.list.forEach((q, i) => {
+      state.qualities.push({
+        label: q.definition || ("Quality " + (i + 1)),
+        value: state.qualities.length,
+        url: q.url || "",
+        isDefault: false
+      });
+    });
   }
 }
 
@@ -1379,7 +1470,7 @@ $("playerOverlay").onclick = e => {
 };
 
 // ========== INIT ==========
-switchSource("dramabox");
+switchSource("melolo");
 </script>
 </body>
 </html>`;
