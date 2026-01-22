@@ -676,7 +676,66 @@ function htmlPage() {
       color: var(--text-muted);
     }
 
+    /* Brand Header */
+    .brand-header {
+      text-align: center;
+      padding: 24px 20px 16px;
+      background: rgba(0, 0, 0, 0.3);
+      border-bottom: 2px solid var(--primary);
+    }
+
+    .brand-title {
+      font-size: 56px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 10px;
+      text-transform: uppercase;
+      text-shadow: 0 0 40px var(--primary-glow);
+      animation: brandGlow 3s ease-in-out infinite;
+      margin-bottom: 12px;
+    }
+
+    .brand-info {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .brand-info-item {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .brand-info-item a {
+      color: var(--primary);
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+
+    .brand-info-item a:hover {
+      color: var(--secondary);
+      text-shadow: 0 0 10px var(--primary-glow);
+    }
+
+    @keyframes brandGlow {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.3); }
+    }
+
     @media (max-width: 768px) {
+      .brand-title {
+        font-size: 38px;
+        letter-spacing: 5px;
+      }
+      .brand-info {
+        flex-direction: column;
+        gap: 8px;
+      }
       .header { flex-direction: column; align-items: stretch; }
       .search-box { max-width: none; }
       .logo { justify-content: center; }
@@ -688,6 +747,13 @@ function htmlPage() {
   </style>
 </head>
 <body>
+  <div class="brand-header">
+    <h1 class="brand-title">ZEROSTORE</h1>
+    <div class="brand-info">
+      <div class="brand-info-item">Admin: <a href="https://t.me/kakatiri" target="_blank" rel="noopener">t.me/kakatiri</a></div>
+      <div class="brand-info-item">Thanks for API: <a href="https://t.me/yourealya" target="_blank" rel="noopener">t.me/yourealya</a></div>
+    </div>
+  </div>
   <div class="container">
     <div class="source-bar">
       <span class="source-label">Sumber:</span>
