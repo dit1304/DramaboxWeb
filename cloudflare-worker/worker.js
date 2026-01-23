@@ -97,8 +97,9 @@ async function proxyStream(request, url) {
   if (videoUrl.includes("aoneroom.com") || videoUrl.includes("melolo")) {
     headers.set("Referer", "https://h5.aoneroom.com/");
     headers.set("Origin", "https://h5.aoneroom.com");
+  } else if (videoUrl.includes("berkasdrive.com")) {
+    headers.set("Referer", "https://berkasdrive.com/");
   } else if (videoUrl.includes("dramaid") || videoUrl.includes("emturbovid") || videoUrl.includes("streamtape")) {
-    // DramaId sources - minimal headers
     headers.set("Referer", "https://dramaid.us/");
   }
 
