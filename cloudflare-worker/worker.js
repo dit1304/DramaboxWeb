@@ -906,9 +906,17 @@ function esc(s) {
 }
 
 async function jget(path) {
+  console.log("Fetching:", API + path);
   const res = await fetch(API + path, { headers: { accept: "application/json" }});
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+  if (!res.ok) {
+    console.error("HTTP error:", res.status, res.statusText);
+    const text = await res.text();
+    console.error("Response:", text);
+    throw new Error("HTTP " + res.status);
+  }
+  const data = await res.json();
+  console.log("Response data:", data);
+  return data;
 }
 
 function setStatus(text) {
@@ -1342,8 +1350,13 @@ async function loadDramaidEpisodes(slug) {
 }
 
 async function loadMovieboxEpisodes(subjectId) {
+  console.log("Loading MovieBox episodes for:", subjectId);
   const json = await jget("/moviebox/v1/info/" + encodeURIComponent(subjectId));
+  console.log("Info response:", json);
   const subject = json?.subject || {};
+  const resource = json?.resource || {};
+  console.log("Subject:", subject);
+  console.log("Resource:", resource);
 
   if (subject.subjectType === 1) {
     state.episodes = [{
@@ -1353,12 +1366,13 @@ async function loadMovieboxEpisodes(subjectId) {
       episode: 1,
       label: "Movie"
     }];
+    console.log("Movie type detected, episodes:", state.episodes);
   } else {
-    const seasons = subject.seasons || [];
+    const seasons = resource.seasons || [];
     let eps = [];
-    seasons.forEach((season, sIdx) => {
-      const seasonNum = sIdx + 1;
-      const epCount = season.episodeCount || 0;
+    seasons.forEach((season) => {
+      const seasonNum = season.se || 1;
+      const epCount = season.maxEp || 0;
       for (let i = 1; i <= epCount; i++) {
         eps.push({
           index: eps.length,
@@ -1370,6 +1384,7 @@ async function loadMovieboxEpisodes(subjectId) {
       }
     });
     state.episodes = eps;
+    console.log("TV series type detected, episodes:", state.episodes);
   }
 
   if (state.episodes.length) {
@@ -1526,11 +1541,15 @@ async function loadDramaidVideo(ep) {
 }
 
 async function loadMovieboxVideo(ep) {
+  console.log("Loading MovieBox video:", ep);
   const watchJson = await jget("/moviebox/v1/watch/" + encodeURIComponent(ep.subjectId) + "?s=" + ep.season + "&e=" + ep.episode);
+  console.log("Watch response:", watchJson);
 
   const sources = watchJson.processedSources || watchJson.downloads || [];
+  console.log("Sources found:", sources);
 
   if (sources.length === 0) {
+    console.error("No sources available in response");
     throw new Error("Video tidak tersedia");
   }
 
@@ -1540,6 +1559,8 @@ async function loadMovieboxVideo(ep) {
     url: source.directUrl || source.url,
     isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
   }));
+
+  console.log("Qualities mapped:", state.qualities);
 
   if (state.qualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
@@ -1629,7 +1650,7 @@ $("playerOverlay").onclick = e => {
 };
 
 // ========== INIT ==========
-switchSource("dramabox");
+switchSource("melolo");
 </script>
 </body>
 </html>`;
