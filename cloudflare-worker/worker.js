@@ -1528,32 +1528,18 @@ async function loadDramaidVideo(ep) {
 async function loadMovieboxVideo(ep) {
   const watchJson = await jget("/moviebox/v1/watch/" + encodeURIComponent(ep.subjectId) + "?s=" + ep.season + "&e=" + ep.episode);
 
-  if (!watchJson.downloads || watchJson.downloads.length === 0) {
+  const sources = watchJson.processedSources || watchJson.downloads || [];
+
+  if (sources.length === 0) {
     throw new Error("Video tidak tersedia");
   }
 
-  const downloads = watchJson.downloads || [];
-
-  for (let i = 0; i < downloads.length; i++) {
-    const d = downloads[i];
-    try {
-      const streamJson = await jget("/moviebox/v1/stream?url=" + encodeURIComponent(d.url));
-      if (streamJson.success && streamJson.stream) {
-        downloads[i].streamUrl = streamJson.stream;
-      }
-    } catch (err) {
-      console.error("Failed to get stream for quality", d.resolution, err);
-    }
-  }
-
-  state.qualities = downloads
-    .filter(d => d.streamUrl)
-    .map((d, i) => ({
-      label: d.resolution + "p",
-      value: i,
-      url: d.streamUrl,
-      isDefault: d.resolution === 720 || d.resolution === 480
-    }));
+  state.qualities = sources.map((source, i) => ({
+    label: (source.quality || source.resolution) + "p",
+    value: i,
+    url: source.directUrl || source.url,
+    isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
+  }));
 
   if (state.qualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
@@ -1643,7 +1629,7 @@ $("playerOverlay").onclick = e => {
 };
 
 // ========== INIT ==========
-switchSource("melolo");
+switchSource("dramabox");
 </script>
 </body>
 </html>`;
