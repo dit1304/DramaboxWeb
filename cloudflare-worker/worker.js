@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker - Multi-Source Streaming Panel
- * Supports: MELOLO, Dramabox, Tensei (Anime), DramaId
+ * Supports: MELOLO, Dramabox, Tensei (Anime), DramaId, MovieBox
  * Features: Pagination, Genre Filter (Tensei)
  * Deploy via GitHub Actions to Cloudflare Workers
  */
@@ -751,7 +751,7 @@ function htmlPage() {
     <h1 class="brand-title">ZEROSTORE</h1>
     <div class="brand-info">
       <div class="brand-info-item">Admin: <a href="https://t.me/kakatiri" target="_blank" rel="noopener">t.me/kakatiri</a></div>
-      <div class="brand-info-item">Thanks for API: <a href="https://t.me/yourealya" target="_blank" rel="noopener">t.me/yourealya</a></div>
+      <div class="brand-info-item">Thanks for API: <a href="https://t.me/yourealya" target="_blank" rel="noopener">t.me/@yourealya</a></div>
     </div>
   </div>
   <div class="container">
@@ -769,6 +769,9 @@ function htmlPage() {
         </button>
         <button class="source-tab" data-source="dramaid">
           <span class="source-icon">🎭</span> DramaId
+        </button>
+        <button class="source-tab" data-source="moviebox">
+          <span class="source-icon">🍿</span> MovieBox
         </button>
       </div>
     </div>
@@ -860,6 +863,13 @@ const SOURCES = {
     color: "#f43f5e",
     navTabs: [
       { id: "home", label: "Home" }
+    ]
+  },
+  moviebox: {
+    name: "MovieBox",
+    color: "#f59e0b",
+    navTabs: [
+      { id: "popular", label: "Popular" }
     ]
   }
 };
@@ -1068,6 +1078,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadTenseiList(mode, page, query);
     } else if (state.source === "dramaid") {
       await loadDramaidList(mode, page, query);
+    } else if (state.source === "moviebox") {
+      await loadMovieboxList(mode, page, query);
     }
     renderList();
     renderPagination();
@@ -1181,6 +1193,26 @@ async function loadDramaidList(mode, page, query) {
   state.totalPages = mode === "search" ? 1 : 20;
 }
 
+async function loadMovieboxList(mode, page, query) {
+  let path = "";
+  if (mode === "popular") path = "/moviebox/v1/popular?p=" + (page - 1);
+  if (mode === "search") path = "/moviebox/v1/find?q=" + encodeURIComponent(query);
+
+  const json = await jget(path);
+  const list = mode === "search" ? (json?.items || []) : (json?.subjectList || []);
+
+  state.list = list.slice(0, 15).map(item => ({
+    id: item.subjectId || "",
+    title: item.title || "Untitled",
+    img: item.cover?.url || item.thumbnail || "",
+    badge: (item.imdbRatingValue || "N/A") + " ⭐",
+    extra: item.genre || "Movie",
+    type: "moviebox"
+  }));
+
+  state.totalPages = mode === "search" ? 1 : 20;
+}
+
 function renderList() {
   const grid = $("grid");
 
@@ -1190,7 +1222,7 @@ function renderList() {
   }
 
   grid.innerHTML = state.list.map(item => {
-    const badgeClass = item.type === 'melolo' ? 'red' : item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : '';
+    const badgeClass = item.type === 'melolo' ? 'red' : item.type === 'tensei' ? 'cyan' : item.type === 'dramaid' ? 'rose' : item.type === 'moviebox' ? 'badge' : '';
     return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
       "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
         "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
@@ -1233,6 +1265,8 @@ async function openContent(id, title, type) {
       await loadTenseiEpisodes(id);
     } else if (type === "dramaid") {
       await loadDramaidEpisodes(id);
+    } else if (type === "moviebox") {
+      await loadMovieboxEpisodes(id);
     }
     renderEpisodes();
     await loadAndPlay();
@@ -1307,6 +1341,42 @@ async function loadDramaidEpisodes(slug) {
   }
 }
 
+async function loadMovieboxEpisodes(subjectId) {
+  const json = await jget("/moviebox/v1/info/" + encodeURIComponent(subjectId));
+  const subject = json?.subject || {};
+
+  if (subject.subjectType === 1) {
+    state.episodes = [{
+      index: 0,
+      subjectId: subjectId,
+      season: 1,
+      episode: 1,
+      label: "Movie"
+    }];
+  } else {
+    const seasons = subject.seasons || [];
+    let eps = [];
+    seasons.forEach((season, sIdx) => {
+      const seasonNum = sIdx + 1;
+      const epCount = season.episodeCount || 0;
+      for (let i = 1; i <= epCount; i++) {
+        eps.push({
+          index: eps.length,
+          subjectId: subjectId,
+          season: seasonNum,
+          episode: i,
+          label: "S" + seasonNum + " E" + i
+        });
+      }
+    });
+    state.episodes = eps;
+  }
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
 function closePlayer() {
   $("playerOverlay").classList.remove("active");
   document.body.style.overflow = "";
@@ -1366,6 +1436,8 @@ async function loadAndPlay() {
       await loadTenseiVideo(ep);
     } else if (state.source === "dramaid") {
       await loadDramaidVideo(ep);
+    } else if (state.source === "moviebox") {
+      await loadMovieboxVideo(ep);
     }
 
     buildQualityDropdown();
@@ -1451,6 +1523,41 @@ async function loadDramaidVideo(ep) {
     url: s.url || "",
     isDefault: s.quality === "720p" || i === streams.length - 1
   }));
+}
+
+async function loadMovieboxVideo(ep) {
+  const watchJson = await jget("/moviebox/v1/watch/" + encodeURIComponent(ep.subjectId) + "?s=" + ep.season + "&e=" + ep.episode);
+
+  if (!watchJson.downloads || watchJson.downloads.length === 0) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  const downloads = watchJson.downloads || [];
+
+  for (let i = 0; i < downloads.length; i++) {
+    const d = downloads[i];
+    try {
+      const streamJson = await jget("/moviebox/v1/stream?url=" + encodeURIComponent(d.url));
+      if (streamJson.success && streamJson.stream) {
+        downloads[i].streamUrl = streamJson.stream;
+      }
+    } catch (err) {
+      console.error("Failed to get stream for quality", d.resolution, err);
+    }
+  }
+
+  state.qualities = downloads
+    .filter(d => d.streamUrl)
+    .map((d, i) => ({
+      label: d.resolution + "p",
+      value: i,
+      url: d.streamUrl,
+      isDefault: d.resolution === 720 || d.resolution === 480
+    }));
+
+  if (state.qualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
 }
 
 function buildQualityDropdown() {
