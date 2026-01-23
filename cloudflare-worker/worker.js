@@ -90,10 +90,17 @@ async function proxyStream(request, url) {
   }
 
   const headers = new Headers({
-    "Referer": "https://h5.aoneroom.com/",
-    "Origin": "https://h5.aoneroom.com",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
   });
+
+  // Set referer based on video URL domain
+  if (videoUrl.includes("aoneroom.com") || videoUrl.includes("melolo")) {
+    headers.set("Referer", "https://h5.aoneroom.com/");
+    headers.set("Origin", "https://h5.aoneroom.com");
+  } else if (videoUrl.includes("dramaid") || videoUrl.includes("emturbovid") || videoUrl.includes("streamtape")) {
+    // DramaId sources - minimal headers
+    headers.set("Referer", "https://dramaid.us/");
+  }
 
   if (request.headers.has("range")) {
     headers.set("Range", request.headers.get("range"));
@@ -103,14 +110,14 @@ async function proxyStream(request, url) {
     const response = await fetch(videoUrl, {
       method: "GET",
       headers: headers,
-      cf: { cacheEverything: true, cacheTtl: 3600 }
+      cf: { cacheEverything: false, cacheTtl: 300 }
     });
 
     const responseHeaders = new Headers(response.headers);
     const c = corsHeaders();
     c.forEach((v, k) => responseHeaders.set(k, v));
 
-    responseHeaders.set("cache-control", "public, max-age=3600");
+    responseHeaders.set("cache-control", "public, max-age=300");
 
     if (response.headers.has("content-range")) {
       responseHeaders.set("content-range", response.headers.get("content-range"));
