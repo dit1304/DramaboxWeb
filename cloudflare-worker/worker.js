@@ -24,6 +24,11 @@ export default {
       return proxyApi(request, url);
     }
 
+    // Stream proxy for video URLs
+    if (url.pathname === "/stream") {
+      return proxyStream(request, url);
+    }
+
     // Home page
     if (url.pathname === "/" || url.pathname === "/index.html") {
       return new Response(htmlPage(), {
@@ -71,6 +76,63 @@ async function proxyApi(request, url) {
   headers.set("cache-control", "no-store");
 
   return new Response(res.body, { status: res.status, headers });
+}
+
+async function proxyStream(request, url) {
+  const videoUrl = url.searchParams.get("url");
+
+  if (!videoUrl) {
+    return new Response("Missing url parameter", { status: 400 });
+  }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+
+  const headers = new Headers({
+    "Referer": "https://h5.aoneroom.com/",
+    "Origin": "https://h5.aoneroom.com",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  });
+
+  if (request.headers.has("range")) {
+    headers.set("Range", request.headers.get("range"));
+  }
+
+  try {
+    const response = await fetch(videoUrl, {
+      method: "GET",
+      headers: headers,
+      cf: { cacheEverything: true, cacheTtl: 3600 }
+    });
+
+    const responseHeaders = new Headers(response.headers);
+    const c = corsHeaders();
+    c.forEach((v, k) => responseHeaders.set(k, v));
+
+    responseHeaders.set("cache-control", "public, max-age=3600");
+
+    if (response.headers.has("content-range")) {
+      responseHeaders.set("content-range", response.headers.get("content-range"));
+    }
+    if (response.headers.has("accept-ranges")) {
+      responseHeaders.set("accept-ranges", response.headers.get("accept-ranges"));
+    }
+    if (response.headers.has("content-length")) {
+      responseHeaders.set("content-length", response.headers.get("content-length"));
+    }
+    if (response.headers.has("content-type")) {
+      responseHeaders.set("content-type", response.headers.get("content-type"));
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      headers: responseHeaders
+    });
+  } catch (error) {
+    console.error("Stream proxy error:", error);
+    return new Response("Failed to fetch video: " + error.message, { status: 500 });
+  }
 }
 
 function corsHeaders() {
@@ -1553,12 +1615,16 @@ async function loadMovieboxVideo(ep) {
     throw new Error("Video tidak tersedia");
   }
 
-  state.qualities = sources.map((source, i) => ({
-    label: (source.quality || source.resolution) + "p",
-    value: i,
-    url: source.directUrl || source.url,
-    isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
-  }));
+  state.qualities = sources.map((source, i) => {
+    const directUrl = source.directUrl || source.url;
+    const proxiedUrl = "/stream?url=" + encodeURIComponent(directUrl);
+    return {
+      label: (source.quality || source.resolution) + "p",
+      value: i,
+      url: proxiedUrl,
+      isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
+    };
+  });
 
   console.log("Qualities mapped:", state.qualities);
 
@@ -1632,6 +1698,30 @@ function applyQuality() {
 }
 
 // ========== EVENTS ==========
+
+const videoPlayer = $("videoPlayer");
+videoPlayer.addEventListener('error', (e) => {
+  console.error("Video error event:", e);
+  console.error("Video error code:", videoPlayer.error?.code);
+  console.error("Video error message:", videoPlayer.error?.message);
+  let errorMsg = "Error loading video";
+  if (videoPlayer.error) {
+    switch(videoPlayer.error.code) {
+      case 1: errorMsg = "Video loading aborted"; break;
+      case 2: errorMsg = "Network error"; break;
+      case 3: errorMsg = "Video decoding failed"; break;
+      case 4: errorMsg = "Video format not supported"; break;
+      default: errorMsg = "Unknown video error";
+    }
+  }
+  setStatus(errorMsg);
+  toast(errorMsg);
+});
+
+videoPlayer.addEventListener('loadstart', () => console.log("Video loadstart"));
+videoPlayer.addEventListener('loadedmetadata', () => console.log("Video metadata loaded"));
+videoPlayer.addEventListener('canplay', () => console.log("Video can play"));
+videoPlayer.addEventListener('playing', () => console.log("Video is playing"));
 
 document.querySelectorAll(".source-tab").forEach(tab => {
   tab.onclick = () => switchSource(tab.dataset.source);
