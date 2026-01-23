@@ -1602,30 +1602,16 @@ async function loadDramaidVideo(ep) {
     throw new Error("Video tidak tersedia");
   }
 
-  const qualityPromises = streams.map(async (s, i) => {
-    try {
-      const streamJson = await jget("/dramaid/stream?url=" + encodeURIComponent(s.url));
-      console.log("DramaId stream response for quality", s.quality, ":", streamJson);
+  state.qualities = streams.map((s, i) => {
+    const proxyUrl = "/stream?url=" + encodeURIComponent(s.url);
 
-      if (streamJson.success && streamJson.stream) {
-        return {
-          label: s.quality || ("Quality " + (i + 1)),
-          value: i,
-          url: streamJson.stream,
-          isDefault: s.quality === "720p" || i === streams.length - 1
-        };
-      } else {
-        console.warn("Failed to get stream for quality", s.quality);
-        return null;
-      }
-    } catch (err) {
-      console.error("Error getting stream for quality", s.quality, ":", err);
-      return null;
-    }
+    return {
+      label: s.quality || ("Quality " + (i + 1)),
+      value: i,
+      url: proxyUrl,
+      isDefault: s.quality === "720p" || i === streams.length - 1
+    };
   });
-
-  const qualities = await Promise.all(qualityPromises);
-  state.qualities = qualities.filter(q => q !== null);
 
   console.log("DramaId qualities mapped:", state.qualities);
 
