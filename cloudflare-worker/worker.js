@@ -1589,17 +1589,49 @@ async function loadTenseiVideo(ep) {
 }
 
 async function loadDramaidVideo(ep) {
+  console.log("Loading DramaId video:", ep);
   const json = await jget("/dramaid/play/" + encodeURIComponent(ep.slug) + "/" + ep.epNum);
+  console.log("DramaId play response:", json);
 
   if (json?.code !== 0) throw new Error("API gagal");
 
   const streams = json?.data?.streams || [];
-  state.qualities = streams.map((s, i) => ({
-    label: s.quality || ("Quality " + (i + 1)),
-    value: i,
-    url: s.url || "",
-    isDefault: s.quality === "720p" || i === streams.length - 1
-  }));
+  console.log("DramaId streams found:", streams);
+
+  if (streams.length === 0) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  const qualityPromises = streams.map(async (s, i) => {
+    try {
+      const streamJson = await jget("/dramaid/stream?url=" + encodeURIComponent(s.url));
+      console.log("DramaId stream response for quality", s.quality, ":", streamJson);
+
+      if (streamJson.success && streamJson.stream) {
+        return {
+          label: s.quality || ("Quality " + (i + 1)),
+          value: i,
+          url: streamJson.stream,
+          isDefault: s.quality === "720p" || i === streams.length - 1
+        };
+      } else {
+        console.warn("Failed to get stream for quality", s.quality);
+        return null;
+      }
+    } catch (err) {
+      console.error("Error getting stream for quality", s.quality, ":", err);
+      return null;
+    }
+  });
+
+  const qualities = await Promise.all(qualityPromises);
+  state.qualities = qualities.filter(q => q !== null);
+
+  console.log("DramaId qualities mapped:", state.qualities);
+
+  if (state.qualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
 }
 
 async function loadMovieboxVideo(ep) {
