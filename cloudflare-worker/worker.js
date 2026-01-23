@@ -1592,20 +1592,27 @@ function buildQualityDropdown() {
 }
 
 function applyQuality() {
+  console.log("Applying quality. Available qualities:", state.qualities);
   const video = $("videoPlayer");
   const sel = $("qualitySelect");
   const idx = sel.value !== "" ? parseInt(sel.value, 10) : 0;
+  console.log("Selected quality index:", idx);
 
   const pick = state.qualities[idx] || state.qualities[0];
+  console.log("Picked quality:", pick);
   if (!pick) {
+    console.error("No quality available");
     setStatus("Link video kosong");
     return;
   }
 
   let url = pick.url || "";
+  console.log("URL before processing:", url);
   if (typeof url === "string" && url.startsWith("//")) url = "https:" + url;
+  console.log("URL after processing:", url);
 
   if (!url) {
+    console.error("URL is empty");
     setStatus("Link video kosong");
     return;
   }
@@ -1613,11 +1620,15 @@ function applyQuality() {
   const prevTime = video.currentTime || 0;
   const wasPaused = video.paused;
 
+  console.log("Setting video src to:", url);
   video.src = url;
   video.load();
+  console.log("Video loaded. Ready to play.");
 
   if (prevTime > 0) video.currentTime = prevTime;
-  if (!wasPaused) video.play().catch(() => {});
+  if (!wasPaused) video.play().catch((e) => {
+    console.error("Failed to play video:", e);
+  });
 }
 
 // ========== EVENTS ==========
