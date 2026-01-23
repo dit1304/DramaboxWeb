@@ -178,7 +178,17 @@ function htmlPage() {
       --radius-sm: 10px;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      overflow-x: hidden;
+      width: 100%;
+    }
 
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -186,6 +196,9 @@ function htmlPage() {
       color: var(--text);
       min-height: 100vh;
       line-height: 1.5;
+      overflow-x: hidden;
+      width: 100%;
+      position: relative;
     }
 
     body::before {
@@ -199,7 +212,7 @@ function htmlPage() {
       z-index: -1;
     }
 
-    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; overflow-x: hidden; width: 100%; }
 
     /* Source Selector */
     .source-bar {
@@ -212,17 +225,27 @@ function htmlPage() {
       border: 1px solid var(--border);
       border-radius: var(--radius);
       margin-bottom: 12px;
+      overflow-x: auto;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .source-bar::-webkit-scrollbar {
+      display: none;
     }
 
     .source-label {
       font-weight: 600;
       font-size: 14px;
       color: var(--text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .source-tabs {
       display: flex;
       gap: 6px;
+      flex-wrap: nowrap;
     }
 
     .source-tab {
@@ -238,6 +261,8 @@ function htmlPage() {
       display: flex;
       align-items: center;
       gap: 6px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .source-tab:hover { background: var(--bg-card); color: var(--text); }
@@ -267,6 +292,8 @@ function htmlPage() {
       position: sticky;
       top: 12px;
       z-index: 100;
+      overflow-x: hidden;
+      width: 100%;
     }
 
     .logo {
@@ -321,6 +348,7 @@ function htmlPage() {
       gap: 8px;
       flex: 1;
       max-width: 400px;
+      min-width: 0;
     }
 
     .search-input {
@@ -333,6 +361,7 @@ function htmlPage() {
       font-size: 14px;
       outline: none;
       transition: border-color 0.2s;
+      min-width: 0;
     }
 
     .search-input:focus { border-color: var(--primary); }
@@ -348,6 +377,7 @@ function htmlPage() {
       font-weight: 700;
       font-size: 14px;
       transition: transform 0.15s, box-shadow 0.2s;
+      flex-shrink: 0;
     }
 
     .search-btn:hover {
@@ -366,6 +396,8 @@ function htmlPage() {
       border: 1px solid var(--border);
       border-radius: var(--radius);
       margin-bottom: 12px;
+      overflow-x: hidden;
+      width: 100%;
     }
 
     .genre-filter.show {
