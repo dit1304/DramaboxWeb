@@ -1615,16 +1615,31 @@ async function loadMovieboxVideo(ep) {
     throw new Error("Video tidak tersedia");
   }
 
-  state.qualities = sources.map((source, i) => {
+  const qualityPromises = sources.map(async (source, i) => {
     const directUrl = source.directUrl || source.url;
-    const proxiedUrl = "/stream?url=" + encodeURIComponent(directUrl);
-    return {
-      label: (source.quality || source.resolution) + "p",
-      value: i,
-      url: proxiedUrl,
-      isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
-    };
+    try {
+      const streamJson = await jget("/moviebox/v1/stream?url=" + encodeURIComponent(directUrl));
+      console.log("Stream response for quality", source.quality || source.resolution, ":", streamJson);
+
+      if (streamJson.success && streamJson.stream) {
+        return {
+          label: (source.quality || source.resolution) + "p",
+          value: i,
+          url: streamJson.stream,
+          isDefault: (source.quality || source.resolution) === 720 || (source.quality || source.resolution) === 480
+        };
+      } else {
+        console.warn("Failed to get stream for quality", source.quality);
+        return null;
+      }
+    } catch (err) {
+      console.error("Error getting stream for quality", source.quality, ":", err);
+      return null;
+    }
   });
+
+  const qualities = await Promise.all(qualityPromises);
+  state.qualities = qualities.filter(q => q !== null);
 
   console.log("Qualities mapped:", state.qualities);
 
