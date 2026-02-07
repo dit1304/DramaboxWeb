@@ -1,18 +1,41 @@
 # StreamBox - Multi Source Streaming Panel
 
 Panel streaming dengan tampilan modern yang mendukung **multiple sources**:
-- **Dramabox** - Drama Korea, China, dll
-- **Tensei Anime** - Anime subtitle Indonesia
+- **MELOLO** - Short Drama
+- **Dramabox** - Short Drama
+- **DramaMovie** - Drama & Movie Asia
+- **Samehadaku** - Anime subtitle Indonesia
 
-## Fitur
+## ✨ Fitur Lengkap
 
-- Pilih sumber dengan mudah (tabs di bagian atas)
-- Tampilan modern dark theme
-- Responsive (mobile-friendly)
+### 🎬 Streaming Features
+- 4 sumber streaming berbeda
+- Pilih sumber dengan mudah (tabs)
 - Video player dengan quality selector
+- Multiple quality options (360p-720p)
 - Daftar episode lengkap
 - Next/Prev episode navigation
-- Pencarian
+- Pencarian dengan history
+
+### 🎯 Advanced Features
+- ⏱️ **Continue Watching** - Resume dari posisi terakhir
+- ⭐ **Favorites/Watchlist** - Bookmark konten favorit
+- ▶️ **Auto Next Episode** - Countdown otomatis
+- ⚡ **Video Speed Control** - 0.5x sampai 2x
+- ⌨️ **Keyboard Shortcuts** - 10+ shortcuts
+- 🎬 **Theater Mode** - Wide screen mode
+- 📺 **Picture in Picture** - Floating player
+- 🔍 **Search History** - Quick suggestions
+- 🔥 **Trending Badges** - Popular content
+- 📊 **Analytics Dashboard** - Visitor & play statistics
+
+### 🎨 UI/UX
+- Tampilan modern dark theme
+- Smooth animations & transitions
+- Gradient effects
+- Responsive (mobile-friendly)
+- Touch gestures support
+- Beautiful card designs
 
 ## Cara Deploy via GitHub Actions
 

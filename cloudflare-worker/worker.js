@@ -20,6 +20,15 @@ export default {
       }
     }
 
+    // Analytics endpoint
+    if (url.pathname === "/analytics/track") {
+      return handleAnalytics(request, env);
+    }
+
+    if (url.pathname === "/analytics/stats") {
+      return getAnalytics(env);
+    }
+
     // API proxy to bypass CORS
     if (url.pathname.startsWith("/api/")) {
       return proxyApi(request, url);
@@ -32,6 +41,9 @@ export default {
 
     // Home page
     if (url.pathname === "/" || url.pathname === "/index.html") {
+      // Track visitor
+      ctx.waitUntil(trackVisitor(request, env));
+      
       return new Response(htmlPage(), {
         status: 200,
         headers: {
@@ -44,6 +56,143 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 };
+
+// Analytics Functions
+async function trackVisitor(request, env) {
+  if (!env.ANALYTICS) return;
+  
+  try {
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Increment total visitors
+    const totalKey = 'stats:total_visitors';
+    const total = parseInt(await env.ANALYTICS.get(totalKey) || '0');
+    await env.ANALYTICS.put(totalKey, (total + 1).toString());
+    
+    // Track unique IPs today
+    const uniqueKey = `stats:unique:${today}`;
+    const uniqueIPs = JSON.parse(await env.ANALYTICS.get(uniqueKey) || '[]');
+    if (!uniqueIPs.includes(ip)) {
+      uniqueIPs.push(ip);
+      await env.ANALYTICS.put(uniqueKey, JSON.stringify(uniqueIPs), {
+        expirationTtl: 86400 * 7 // 7 days
+      });
+    }
+  } catch (e) {
+    console.error('Analytics error:', e);
+  }
+}
+
+async function handleAnalytics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+  
+  if (!env.ANALYTICS) {
+    return new Response(JSON.stringify({ error: 'Analytics not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+  
+  try {
+    const data = await request.json();
+    const { type, content_id, content_title, source } = data;
+    
+    if (type === 'video_play') {
+      // Track video play
+      const key = `play:${source}:${content_id}`;
+      const count = parseInt(await env.ANALYTICS.get(key) || '0');
+      await env.ANALYTICS.put(key, (count + 1).toString());
+      
+      // Store content info
+      const infoKey = `info:${source}:${content_id}`;
+      await env.ANALYTICS.put(infoKey, JSON.stringify({
+        title: content_title,
+        source,
+        plays: count + 1,
+        last_played: new Date().toISOString()
+      }));
+      
+      // Increment total plays
+      const totalPlaysKey = 'stats:total_plays';
+      const totalPlays = parseInt(await env.ANALYTICS.get(totalPlaysKey) || '0');
+      await env.ANALYTICS.put(totalPlaysKey, (totalPlays + 1).toString());
+    }
+    
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+}
+
+async function getAnalytics(env) {
+  // Fallback to mock data if KV not configured
+  if (!env.ANALYTICS) {
+    const mockData = {
+      total_visitors: 15420,
+      unique_today: 342,
+      total_plays: 8750,
+      most_watched: [
+        { title: "Sample Drama 1", source: "dramabox", plays: 1250 },
+        { title: "Sample Movie 2", source: "dramamovie", plays: 980 },
+        { title: "Sample Anime 3", source: "samehadaku", plays: 845 }
+      ]
+    };
+    
+    return new Response(JSON.stringify(mockData), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const totalVisitors = parseInt(await env.ANALYTICS.get('stats:total_visitors') || '0');
+    const uniqueIPs = JSON.parse(await env.ANALYTICS.get(`stats:unique:${today}`) || '[]');
+    const totalPlays = parseInt(await env.ANALYTICS.get('stats:total_plays') || '0');
+    
+    // Get most watched (top 10)
+    const list = await env.ANALYTICS.list({ prefix: 'play:' });
+    const mostWatched = [];
+    
+    for (const key of list.keys.slice(0, 20)) {
+      const count = parseInt(await env.ANALYTICS.get(key.name) || '0');
+      const infoKey = key.name.replace('play:', 'info:');
+      const info = JSON.parse(await env.ANALYTICS.get(infoKey) || '{}');
+      
+      if (info.title) {
+        mostWatched.push({
+          title: info.title,
+          source: info.source,
+          plays: count
+        });
+      }
+    }
+    
+    mostWatched.sort((a, b) => b.plays - a.plays);
+    
+    return new Response(JSON.stringify({
+      total_visitors: totalVisitors,
+      unique_today: uniqueIPs.length,
+      total_plays: totalPlays,
+      most_watched: mostWatched.slice(0, 10)
+    }), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+}
 
 async function proxyApi(request, url) {
   const targetPath = url.pathname.replace(/^\/api/, "");
@@ -934,6 +1083,614 @@ function htmlPage() {
       display: none !important;
     }
 
+    /* Continue Watching & Favorites Section */
+    .feature-section {
+      margin-bottom: 32px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 0 4px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-icon {
+      font-size: 24px;
+    }
+
+    .clear-btn {
+      padding: 6px 14px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #ef4444;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .clear-btn:hover {
+      background: rgba(239,68,68,0.2);
+      transform: translateY(-2px);
+    }
+
+    .horizontal-scroll {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding: 8px 4px 16px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--primary) transparent;
+    }
+
+    .horizontal-scroll::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .horizontal-scroll::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 3px;
+    }
+
+    .mini-card {
+      min-width: 160px;
+      max-width: 160px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    .mini-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+      box-shadow: 0 8px 24px rgba(139,92,246,0.3);
+    }
+
+    .mini-card-img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      background: var(--bg-elevated);
+    }
+
+    .mini-card-body {
+      padding: 10px;
+    }
+
+    .mini-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.3;
+    }
+
+    .mini-card-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(139,92,246,0.2);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--gradient);
+      transition: width 0.3s ease;
+    }
+
+    .favorite-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      z-index: 10;
+    }
+
+    .favorite-btn:hover {
+      background: rgba(0,0,0,0.8);
+      transform: scale(1.1);
+    }
+
+    .favorite-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+    }
+
+    /* Video Controls Enhancement */
+    .speed-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .speed-btn {
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    .speed-btn:hover {
+      border-color: var(--primary);
+      background: var(--bg-elevated);
+    }
+
+    .speed-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    .theater-btn, .pip-btn {
+      padding: 10px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .theater-btn:hover, .pip-btn:hover {
+      border-color: var(--primary);
+      background: var(--bg-elevated);
+      transform: translateY(-2px);
+    }
+
+    .theater-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    /* Theater Mode */
+    body.theater-mode .player-container {
+      max-width: 100%;
+    }
+
+    body.theater-mode .video-wrapper {
+      max-height: 85vh;
+    }
+
+    /* Auto Next Countdown */
+    .auto-next-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(12px);
+      padding: 32px 48px;
+      border-radius: 20px;
+      text-align: center;
+      z-index: 100;
+      border: 2px solid var(--primary);
+      box-shadow: 0 8px 32px rgba(139,92,246,0.5);
+      display: none;
+    }
+
+    .auto-next-overlay.show {
+      display: block;
+      animation: fadeInScale 0.3s ease-out;
+    }
+
+    @keyframes fadeInScale {
+      from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+
+    .countdown-number {
+      font-size: 64px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 16px 0;
+    }
+
+    .countdown-text {
+      font-size: 16px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .countdown-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .countdown-btn {
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+    }
+
+    .countdown-btn.primary {
+      background: var(--gradient);
+      color: white;
+    }
+
+    .countdown-btn.secondary {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .countdown-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(139,92,246,0.4);
+    }
+
+    /* Search Suggestions */
+    .search-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 1000;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .search-suggestions.show {
+      display: block;
+    }
+
+    .suggestion-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover {
+      background: var(--bg-elevated);
+    }
+
+    .suggestion-icon {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .suggestion-text {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    /* Keyboard Shortcuts Indicator */
+    .shortcuts-hint {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(12px);
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      z-index: 1001;
+      display: none;
+      animation: fadeInUp 0.3s ease-out;
+    }
+
+    .shortcuts-hint.show {
+      display: block;
+    }
+
+    .shortcuts-hint kbd {
+      background: var(--bg-elevated);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      margin: 0 2px;
+    }
+
+    /* Statistics Dashboard */
+    .stats-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+      padding: 0 4px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139,92,246,0.05) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(139,92,246,0.3);
+      border-color: var(--primary);
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: var(--gradient);
+      opacity: 0.05;
+      border-radius: 50%;
+      transform: translate(30%, -30%);
+    }
+
+    .stat-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      display: inline-block;
+      filter: drop-shadow(0 2px 8px rgba(139,92,246,0.3));
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-trend {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 11px;
+      padding: 4px 8px;
+      background: rgba(34,197,94,0.1);
+      color: #22c55e;
+      border-radius: 8px;
+      font-weight: 700;
+    }
+
+    /* Most Watched Section */
+    .most-watched-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .watched-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all 0.3s ease;
+    }
+
+    .watched-item:hover {
+      background: var(--bg-elevated);
+      border-color: var(--primary);
+      transform: translateX(4px);
+    }
+
+    .watched-rank {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--primary);
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .watched-rank.top1 { color: #fbbf24; }
+    .watched-rank.top2 { color: #d1d5db; }
+    .watched-rank.top3 { color: #fb923c; }
+
+    .watched-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .watched-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .watched-source {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .watched-count {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stats-toggle {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      background: var(--gradient);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(139,92,246,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      transition: all 0.3s ease;
+      z-index: 999;
+    }
+
+    .stats-toggle:hover {
+      transform: scale(1.1);
+      box-shadow: 0 8px 24px rgba(139,92,246,0.6);
+    }
+
+    .stats-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(8px);
+      z-index: 1002;
+      display: none;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .stats-modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stats-modal-content {
+      background: var(--bg);
+      border: 2px solid var(--primary);
+      border-radius: var(--radius);
+      padding: 32px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(139,92,246,0.4);
+    }
+
+    .stats-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .stats-modal-title {
+      font-size: 28px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .refresh-stats-btn {
+      padding: 8px 16px;
+      background: var(--gradient);
+      border: none;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+    }
+
+    .refresh-stats-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 16px rgba(139,92,246,0.5);
+    }
+
     /* Loading */
     .loading {
       text-align: center;
@@ -1114,6 +1871,32 @@ function htmlPage() {
         min-width: 120px;
         justify-content: center;
       }
+      .speed-control {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .theater-btn, .pip-btn {
+        flex: 1;
+        min-width: 100px;
+        justify-content: center;
+      }
+      .feature-section {
+        margin-bottom: 24px;
+      }
+      .section-title {
+        font-size: 16px;
+      }
+      .section-icon {
+        font-size: 20px;
+      }
+      .auto-next-overlay {
+        padding: 24px 32px;
+        max-width: 90%;
+      }
+      .countdown-number {
+        font-size: 48px;
+      }
     }
   </style>
 </head>
@@ -1122,7 +1905,7 @@ function htmlPage() {
     <h1 class="brand-title">ZEROSTORE</h1>
     <div class="brand-info">
       <div class="brand-info-item">Admin: <a href="https://t.me/kakatiri" target="_blank" rel="noopener">t.me/kakatiri</a></div>
-      <div class="brand-info-item">Thanks for API: <a href="https://t.me/yourealya" target="_blank" rel="noopener">t.me/@yourealya</a></div>
+      <div class="brand-info-item">Thanks for API: <a href="https://t.me/November2k" target="_blank" rel="noopener">t.me/November2k</a></div>
     </div>
   </div>
   <div class="container">
@@ -1134,6 +1917,9 @@ function htmlPage() {
         </button>
         <button class="source-tab" data-source="dramabox">
           <span class="source-icon">🎬</span> Dramabox
+        </button>
+        <button class="source-tab" data-source="dramamovie">
+          <span class="source-icon">🎭</span> DramaMovie
         </button>
         <button class="source-tab" data-source="samehadaku">
           <span class="source-icon">🎌</span> Samehadaku
@@ -1148,11 +1934,61 @@ function htmlPage() {
         <span class="logo-text" id="logoText">MELOLO</span>
       </div>
       <nav class="nav" id="navTabs"></nav>
-      <div class="search-box">
-        <input type="text" class="search-input" id="searchInput" placeholder="Cari..." />
+      <div class="search-box" style="position: relative;">
+        <input type="text" class="search-input" id="searchInput" placeholder="Cari..." autocomplete="off" />
         <button class="search-btn" id="btnSearch">Cari</button>
+        <div class="search-suggestions" id="searchSuggestions"></div>
       </div>
     </header>
+
+    <!-- Statistics Dashboard -->
+    <div class="stats-dashboard">
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-value" id="statTotalVisitors">0</div>
+        <div class="stat-label">Total Visitors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🌟</div>
+        <div class="stat-value" id="statUniqueToday">0</div>
+        <div class="stat-label">Unique Today</div>
+        <span class="stat-trend">+Live</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">▶️</div>
+        <div class="stat-value" id="statTotalPlays">0</div>
+        <div class="stat-label">Video Plays</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔥</div>
+        <div class="stat-value" id="statMostWatched">0</div>
+        <div class="stat-label">Top Content</div>
+      </div>
+    </div>
+
+    <!-- Continue Watching Section -->
+    <div class="feature-section" id="continueWatchingSection" style="display: none;">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">⏱️</span>
+          Lanjutkan Menonton
+        </h2>
+        <button class="clear-btn" id="clearContinue">Clear All</button>
+      </div>
+      <div class="horizontal-scroll" id="continueWatchingList"></div>
+    </div>
+
+    <!-- Favorites Section -->
+    <div class="feature-section" id="favoritesSection" style="display: none;">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">⭐</span>
+          Favorit Saya
+        </h2>
+        <button class="clear-btn" id="clearFavorites">Clear All</button>
+      </div>
+      <div class="horizontal-scroll" id="favoritesList"></div>
+    </div>
 
     <main id="grid" class="grid"></main>
 
@@ -1170,6 +2006,14 @@ function htmlPage() {
       </div>
       <div class="video-wrapper" id="videoWrapper">
         <video id="videoPlayer" controls playsinline></video>
+        <div class="auto-next-overlay" id="autoNextOverlay">
+          <div class="countdown-text">Episode berikutnya dimulai dalam</div>
+          <div class="countdown-number" id="countdownNumber">10</div>
+          <div class="countdown-actions">
+            <button class="countdown-btn secondary" id="cancelAutoNext">Cancel</button>
+            <button class="countdown-btn primary" id="playNextNow">Play Now</button>
+          </div>
+        </div>
       </div>
       <div class="controls" id="videoControls">
         <button class="control-btn" id="prevEp">◀ Prev</button>
@@ -1177,6 +2021,21 @@ function htmlPage() {
         <select class="quality-select" id="qualitySelect">
           <option value="">Auto</option>
         </select>
+        <div class="speed-control">
+          <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Speed:</span>
+          <button class="speed-btn" data-speed="0.5">0.5x</button>
+          <button class="speed-btn" data-speed="0.75">0.75x</button>
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="1.25">1.25x</button>
+          <button class="speed-btn" data-speed="1.5">1.5x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+        </div>
+        <button class="theater-btn" id="theaterBtn">
+          <span>🎬</span> Theater
+        </button>
+        <button class="pip-btn" id="pipBtn">
+          <span>📺</span> PiP
+        </button>
         <span class="status-text" id="statusText">Siap</span>
       </div>
       <div class="download-section" id="downloadSection" style="display: none;">
@@ -1193,6 +2052,57 @@ function htmlPage() {
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- Stats Toggle Button -->
+  <button class="stats-toggle" id="statsToggle" title="View Statistics">📊</button>
+
+  <!-- Stats Modal -->
+  <div class="stats-modal" id="statsModal">
+    <div class="stats-modal-content">
+      <div class="stats-modal-header">
+        <h2 class="stats-modal-title">
+          <span>📊</span> Website Statistics
+        </h2>
+        <div style="display: flex; gap: 12px;">
+          <button class="refresh-stats-btn" id="refreshStats">🔄 Refresh</button>
+          <button class="close-btn" id="closeStatsModal">&times;</button>
+        </div>
+      </div>
+
+      <div class="stats-dashboard">
+        <div class="stat-card">
+          <div class="stat-icon">👥</div>
+          <div class="stat-value" id="modalTotalVisitors">0</div>
+          <div class="stat-label">Total Visitors</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🌟</div>
+          <div class="stat-value" id="modalUniqueToday">0</div>
+          <div class="stat-label">Unique Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">▶️</div>
+          <div class="stat-value" id="modalTotalPlays">0</div>
+          <div class="stat-label">Total Plays</div>
+        </div>
+      </div>
+
+      <div class="feature-section" style="margin-top: 32px;">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="section-icon">🏆</span>
+            Most Watched Content
+          </h2>
+        </div>
+        <div class="most-watched-list" id="mostWatchedList">
+          <div class="loading" style="padding: 20px;">
+            <div class="spinner"></div>
+            Loading statistics...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script>
 const API = "/api";
@@ -1212,6 +2122,13 @@ const SOURCES = {
     navTabs: [
       { id: "populer", label: "Populer" },
       { id: "new", label: "Terbaru" }
+    ]
+  },
+  dramamovie: {
+    name: "DramaMovie",
+    color: "#ec4899",
+    navTabs: [
+      { id: "search", label: "Search" }
     ]
   },
   samehadaku: {
@@ -1236,6 +2153,111 @@ const state = {
   episodes: [],
   currentEpIndex: 0,
   qualities: [],
+  playbackRate: 1,
+  theaterMode: false,
+  autoNextCountdown: null,
+};
+
+// LocalStorage Manager
+const storage = {
+  get(key) {
+    try {
+      const item = localStorage.getItem('streambox_' + key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem('streambox_' + key, JSON.stringify(value));
+    } catch (e) {
+      console.error('Storage error:', e);
+    }
+  },
+  remove(key) {
+    try {
+      localStorage.removeItem('streambox_' + key);
+    } catch (e) {}
+  }
+};
+
+// Continue Watching Manager
+const continueWatching = {
+  save(source, id, title, img, episode, currentTime, duration) {
+    const watching = storage.get('continue_watching') || {};
+    const key = source + '_' + id;
+    watching[key] = {
+      source, id, title, img, episode, currentTime, duration,
+      timestamp: Date.now()
+    };
+    storage.set('continue_watching', watching);
+  },
+  get() {
+    const watching = storage.get('continue_watching') || {};
+    return Object.values(watching).sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+  },
+  remove(source, id) {
+    const watching = storage.get('continue_watching') || {};
+    delete watching[source + '_' + id];
+    storage.set('continue_watching', watching);
+  }
+};
+
+// Favorites Manager
+const favorites = {
+  toggle(source, id, title, img, badge) {
+    const favs = storage.get('favorites') || {};
+    const key = source + '_' + id;
+    if (favs[key]) {
+      delete favs[key];
+      storage.set('favorites', favs);
+      return false;
+    } else {
+      favs[key] = { source, id, title, img, badge, timestamp: Date.now() };
+      storage.set('favorites', favs);
+      return true;
+    }
+  },
+  isFavorite(source, id) {
+    const favs = storage.get('favorites') || {};
+    return !!(favs[source + '_' + id]);
+  },
+  get() {
+    const favs = storage.get('favorites') || {};
+    return Object.values(favs).sort((a, b) => b.timestamp - a.timestamp);
+  },
+  remove(source, id) {
+    const favs = storage.get('favorites') || {};
+    delete favs[source + '_' + id];
+    storage.set('favorites', favs);
+  }
+};
+
+// Search History Manager
+const searchHistory = {
+  add(source, query) {
+    if (!query || query.length < 2) return;
+    const history = storage.get('search_history') || {};
+    if (!history[source]) history[source] = [];
+    history[source] = history[source].filter(q => q !== query);
+    history[source].unshift(query);
+    history[source] = history[source].slice(0, 10);
+    storage.set('search_history', history);
+  },
+  get(source) {
+    const history = storage.get('search_history') || {};
+    return history[source] || [];
+  },
+  clear(source) {
+    const history = storage.get('search_history') || {};
+    if (source) {
+      delete history[source];
+    } else {
+      return {};
+    }
+    storage.set('search_history', history);
+  }
 };
 
 const $ = id => document.getElementById(id);
@@ -1270,6 +2292,74 @@ function setStatus(text) {
   $("statusText").textContent = text;
 }
 
+// ========== CONTINUE WATCHING & FAVORITES ==========
+
+function renderContinueWatching() {
+  const list = continueWatching.get();
+  const section = $("continueWatchingSection");
+  const container = $("continueWatchingList");
+  
+  if (list.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  
+  section.style.display = "block";
+  container.innerHTML = list.map(item => {
+    const progress = (item.currentTime / item.duration) * 100;
+    return '<div class="mini-card" data-source="' + item.source + '" data-id="' + item.id + '">' +
+      '<img class="mini-card-img" src="' + esc(item.img) + '" alt="' + esc(item.title) + '" />' +
+      '<div class="progress-bar"><div class="progress-fill" style="width: ' + progress + '%"></div></div>' +
+      '<div class="mini-card-body">' +
+        '<div class="mini-card-title">' + esc(item.title) + '</div>' +
+        '<div class="mini-card-meta">' + esc(item.episode) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  
+  container.querySelectorAll('.mini-card').forEach(card => {
+    card.onclick = () => {
+      state.source = card.dataset.source;
+      switchSource(card.dataset.source);
+      setTimeout(() => {
+        openContent(card.dataset.id, '', card.dataset.source, '');
+      }, 500);
+    };
+  });
+}
+
+function renderFavorites() {
+  const list = favorites.get();
+  const section = $("favoritesSection");
+  const container = $("favoritesList");
+  
+  if (list.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  
+  section.style.display = "block";
+  container.innerHTML = list.map(item => {
+    return '<div class="mini-card" data-source="' + item.source + '" data-id="' + item.id + '">' +
+      '<img class="mini-card-img" src="' + esc(item.img) + '" alt="' + esc(item.title) + '" />' +
+      '<div class="mini-card-body">' +
+        '<div class="mini-card-title">' + esc(item.title) + '</div>' +
+        '<div class="mini-card-meta">' + esc(item.badge) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  
+  container.querySelectorAll('.mini-card').forEach(card => {
+    card.onclick = () => {
+      state.source = card.dataset.source;
+      switchSource(card.dataset.source);
+      setTimeout(() => {
+        openContent(card.dataset.id, '', card.dataset.source, '');
+      }, 500);
+    };
+  });
+}
+
 // ========== SOURCE SWITCHING ==========
 
 async function switchSource(source) {
@@ -1289,10 +2379,11 @@ async function switchSource(source) {
   renderNavTabs();
 
   const firstTab = SOURCES[source].navTabs[0].id;
-  if (source === "samehadaku" && firstTab === "search") {
-    // For samehadaku, show empty state with search prompt
+  if ((source === "samehadaku" || source === "dramamovie") && firstTab === "search") {
+    // For search-only sources, show empty state with search prompt
     state.mode = "search";
-    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari anime...</div>';
+    const searchPrompt = source === "samehadaku" ? "anime" : "drama/movie";
+    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari ' + searchPrompt + '...</div>';
     setActiveNav("search");
   } else {
     loadList(firstTab, 1);
@@ -1387,6 +2478,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadMeloloList(mode, page, query);
     } else if (state.source === "dramabox") {
       await loadDramaboxList(mode, page, query);
+    } else if (state.source === "dramamovie") {
+      await loadDramaMovieList(mode, page, query);
     } else if (state.source === "samehadaku") {
       await loadSamehadakuList(mode, page, query);
     }
@@ -1465,6 +2558,30 @@ async function loadDramaboxList(mode, page, query) {
   state.totalPages = mode === "search" ? 1 : 10;
 }
 
+async function loadDramaMovieList(mode, page, query) {
+  if (mode === "search" && !query) {
+    state.list = [];
+    return;
+  }
+
+  let path = "/drama/search?q=" + encodeURIComponent(query);
+  const json = await jget(path);
+  
+  const dramaList = json?.data || [];
+  
+  state.list = dramaList.slice(0, 20).map(item => ({
+    id: item.id || "",
+    link: item.link || "",
+    title: item.title || "Untitled",
+    img: item.image || "",
+    badge: item.category?.split(',').slice(0, 2).join(' • ') || "Drama",
+    hits: item.hits || "0",
+    type: "dramamovie"
+  }));
+
+  state.totalPages = 1;
+}
+
 async function loadSamehadakuList(mode, page, query) {
   if (mode === "search" && !query) {
     state.list = [];
@@ -1499,8 +2616,24 @@ function renderList() {
   }
 
   grid.innerHTML = state.list.map(item => {
-    const badgeClass = item.type === 'melolo' ? 'red' : item.type === 'dramabox' ? 'badge' : item.type === 'samehadaku' ? 'cyan' : '';
-    return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-slug=\\"" + esc(item.slug || '') + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
+    let badgeClass = '';
+    if (item.type === 'melolo') badgeClass = 'red';
+    else if (item.type === 'dramabox') badgeClass = 'badge';
+    else if (item.type === 'dramamovie') badgeClass = 'badge';
+    else if (item.type === 'samehadaku') badgeClass = 'cyan';
+    
+    const isFav = favorites.isFavorite(item.type, item.id);
+    const favIcon = isFav ? '❤️' : '🤍';
+    
+    // Add trending badge if hits > 500k
+    let trendingBadge = '';
+    if (item.hits && parseInt(item.hits) > 500000) {
+      trendingBadge = '<div style="position: absolute; top: 8px; left: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; box-shadow: 0 2px 8px rgba(239,68,68,0.4);">🔥 Trending</div>';
+    }
+    
+    return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-slug=\\"" + esc(item.slug || '') + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\" data-badge=\\"" + esc(item.badge) + "\\" data-img=\\"" + esc(item.img) + "\\">" +
+      trendingBadge +
+      "<div class=\\"favorite-btn " + (isFav ? 'active' : '') + "\\" data-action=\\"favorite\\">" + favIcon + "</div>" +
       "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
         "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
       "<div class=\\"card-body\\">" +
@@ -1514,7 +2647,28 @@ function renderList() {
   }).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
-    card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type, card.dataset.slug);
+    const favBtn = card.querySelector('[data-action="favorite"]');
+    if (favBtn) {
+      favBtn.onclick = (e) => {
+        e.stopPropagation();
+        const isFav = favorites.toggle(
+          card.dataset.type,
+          card.dataset.id,
+          card.dataset.title,
+          card.dataset.img,
+          card.dataset.badge
+        );
+        favBtn.classList.toggle('active', isFav);
+        favBtn.textContent = isFav ? '❤️' : '🤍';
+        toast(isFav ? '➕ Ditambahkan ke favorit' : '➖ Dihapus dari favorit');
+        renderFavorites();
+      };
+    }
+    
+    card.onclick = (e) => {
+      if (e.target.closest('[data-action="favorite"]')) return;
+      openContent(card.dataset.id, card.dataset.title, card.dataset.type, card.dataset.slug);
+    };
   });
 }
 
@@ -1538,6 +2692,8 @@ async function openContent(id, title, type, slug) {
       await loadMeloloEpisodes(id);
     } else if (type === "dramabox") {
       await loadDramaboxEpisodes(id);
+    } else if (type === "dramamovie") {
+      await loadDramaMovieEpisodes(id);
     } else if (type === "samehadaku") {
       await loadSamehadakuEpisodes(title);
     }
@@ -1589,6 +2745,23 @@ async function loadDramaboxEpisodes(dramaId) {
   }
 }
 
+async function loadDramaMovieEpisodes(dramaId) {
+  const json = await jget("/drama/info?id=" + encodeURIComponent(dramaId));
+  const episodes = json?.data_episode || [];
+
+  state.episodes = episodes.map((ep, i) => ({
+    index: i,
+    episodeId: ep.episode_id || "",
+    streamingId: ep.streaming || "",
+    label: ep.episode_label || ("Episode " + (i + 1)),
+    image: ep.episode_image || ""
+  }));
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
 async function loadSamehadakuEpisodes(title) {
   // For samehadaku, we already have episodes from search result
   const anime = state.list.find(item => item.title === title);
@@ -1612,6 +2785,11 @@ function closePlayer() {
   const video = $("videoPlayer");
   video.pause();
   video.src = "";
+  cancelAutoNext();
+  state.theaterMode = false;
+  document.body.classList.remove('theater-mode');
+  $("theaterBtn").classList.remove('active');
+  renderContinueWatching();
 }
 
 function renderEpisodes() {
@@ -1675,6 +2853,8 @@ async function loadAndPlay() {
         await loadMeloloVideo(ep);
       } else if (state.source === "dramabox") {
         await loadDramaboxVideo(ep);
+      } else if (state.source === "dramamovie") {
+        await loadDramaMovieVideo(ep);
       }
 
       buildQualityDropdown();
@@ -1716,6 +2896,49 @@ async function loadDramaboxVideo(ep) {
     url: q.videoPath || q.videoUrl || "",
     isDefault: q.isDefault === 1
   })) : [];
+
+  if (state.qualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
+}
+
+async function loadDramaMovieVideo(ep) {
+  const json = await jget("/drama/stream?id=" + encodeURIComponent(ep.streamingId));
+
+  if (!json?.data_stream || json.data_stream.length === 0) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  const stream = json.data_stream[0];
+  state.qualities = [];
+
+  // Add qualities in order: 720p, 480p, 360p
+  if (stream["720p"]) {
+    state.qualities.push({
+      label: "720p" + (stream["720p_size"] ? " (" + stream["720p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["720p"],
+      isDefault: true
+    });
+  }
+
+  if (stream["480p"]) {
+    state.qualities.push({
+      label: "480p" + (stream["480p_size"] ? " (" + stream["480p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["480p"],
+      isDefault: !stream["720p"]
+    });
+  }
+
+  if (stream["360p"]) {
+    state.qualities.push({
+      label: "360p" + (stream["360p_size"] ? " (" + stream["360p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["360p"],
+      isDefault: !stream["720p"] && !stream["480p"]
+    });
+  }
 
   if (state.qualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
@@ -1833,6 +3056,11 @@ function applyQuality() {
   if (!wasPaused) video.play().catch((e) => {
     console.error("Failed to play video:", e);
   });
+  
+  // Track video play (only once per video load)
+  if (prevTime === 0) {
+    trackVideoPlay(state.source, state.currentId, state.currentTitle);
+  }
 }
 
 // ========== EVENTS ==========
@@ -1865,26 +3093,381 @@ document.querySelectorAll(".source-tab").forEach(tab => {
   tab.onclick = () => switchSource(tab.dataset.source);
 });
 
+
+// ========== SEARCH WITH HISTORY ==========
+
+function showSearchSuggestions() {
+  const history = searchHistory.get(state.source);
+  const suggestions = $("searchSuggestions");
+  
+  if (history.length === 0) {
+    suggestions.classList.remove("show");
+    return;
+  }
+  
+  suggestions.innerHTML = history.map(query => 
+    '<div class="suggestion-item" data-query="' + esc(query) + '">' +
+      '<span class="suggestion-icon">🔍</span>' +
+      '<span class="suggestion-text">' + esc(query) + '</span>' +
+    '</div>'
+  ).join('');
+  
+  suggestions.querySelectorAll('.suggestion-item').forEach(item => {
+    item.onclick = () => {
+      $("searchInput").value = item.dataset.query;
+      $("btnSearch").click();
+      suggestions.classList.remove("show");
+    };
+  });
+  
+  suggestions.classList.add("show");
+}
+
+$("searchInput").onfocus = () => showSearchSuggestions();
+$("searchInput").onblur = () => setTimeout(() => $("searchSuggestions").classList.remove("show"), 200);
+
+$("searchInput").onkeydown = e => {
+  if (e.key === "Enter") {
+    $("btnSearch").click();
+    $("searchSuggestions").classList.remove("show");
+  }
+};
+
 $("btnSearch").onclick = () => {
   const q = $("searchInput").value.trim();
   if (!q) return toast("Masukkan judul dulu");
+  searchHistory.add(state.source, q);
   loadList("search", 1, q);
 };
 
-$("searchInput").onkeydown = e => {
-  if (e.key === "Enter") $("btnSearch").click();
-};
+// ========== PLAYER ENHANCEMENTS ==========
 
 $("closePlayer").onclick = closePlayer;
 $("prevEp").onclick = () => goRelative(-1);
 $("nextEp").onclick = () => goRelative(1);
 
+// Speed Control
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.onclick = () => {
+    const speed = parseFloat(btn.dataset.speed);
+    state.playbackRate = speed;
+    $("videoPlayer").playbackRate = speed;
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    toast('🎬 Speed: ' + speed + 'x');
+  };
+});
+
+// Theater Mode
+$("theaterBtn").onclick = () => {
+  state.theaterMode = !state.theaterMode;
+  document.body.classList.toggle('theater-mode', state.theaterMode);
+  $("theaterBtn").classList.toggle('active', state.theaterMode);
+  toast(state.theaterMode ? '🎬 Theater Mode ON' : '🎬 Theater Mode OFF');
+};
+
+// Picture in Picture
+$("pipBtn").onclick = async () => {
+  const video = $("videoPlayer");
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      toast('📺 PiP OFF');
+    } else {
+      await video.requestPictureInPicture();
+      toast('📺 PiP ON');
+    }
+  } catch (err) {
+    toast('❌ PiP not supported');
+  }
+};
+
+// Auto Next Episode
+let autoNextTimer = null;
+let autoNextCountdown = 10;
+
+function startAutoNext() {
+  if (state.currentEpIndex >= state.episodes.length - 1) return;
+  
+  autoNextCountdown = 10;
+  $("autoNextOverlay").classList.add("show");
+  $("countdownNumber").textContent = autoNextCountdown;
+  
+  autoNextTimer = setInterval(() => {
+    autoNextCountdown--;
+    $("countdownNumber").textContent = autoNextCountdown;
+    
+    if (autoNextCountdown <= 0) {
+      clearInterval(autoNextTimer);
+      $("autoNextOverlay").classList.remove("show");
+      goRelative(1);
+    }
+  }, 1000);
+}
+
+function cancelAutoNext() {
+  if (autoNextTimer) {
+    clearInterval(autoNextTimer);
+    autoNextTimer = null;
+  }
+  $("autoNextOverlay").classList.remove("show");
+}
+
+$("cancelAutoNext").onclick = () => {
+  cancelAutoNext();
+  toast('⏹️ Auto next cancelled');
+};
+
+$("playNextNow").onclick = () => {
+  cancelAutoNext();
+  goRelative(1);
+};
+
+// Video ended event - trigger auto next
+videoPlayer.addEventListener('ended', () => {
+  if (state.source !== 'samehadaku') {
+    startAutoNext();
+  }
+});
+
+// Save continue watching progress
+videoPlayer.addEventListener('timeupdate', () => {
+  const video = $("videoPlayer");
+  if (video.currentTime > 5 && video.duration > 0) {
+    const ep = state.episodes[state.currentEpIndex];
+    if (ep && state.currentTitle) {
+      continueWatching.save(
+        state.source,
+        state.currentId,
+        state.currentTitle,
+        state.list.find(item => item.id === state.currentId)?.img || '',
+        ep.label,
+        video.currentTime,
+        video.duration
+      );
+    }
+  }
+});
+
+// Keyboard Shortcuts
+let shortcutHintTimeout;
+
+function showShortcutHint(text) {
+  const hint = document.createElement('div');
+  hint.className = 'shortcuts-hint show';
+  hint.innerHTML = text;
+  document.body.appendChild(hint);
+  
+  clearTimeout(shortcutHintTimeout);
+  shortcutHintTimeout = setTimeout(() => {
+    hint.classList.remove('show');
+    setTimeout(() => hint.remove(), 300);
+  }, 2000);
+}
+
+document.addEventListener('keydown', (e) => {
+  // Don't trigger shortcuts when typing in input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  
+  const video = $("videoPlayer");
+  const playerActive = $("playerOverlay").classList.contains('active');
+  
+  if (!playerActive) return;
+  
+  switch(e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      if (video.paused) {
+        video.play();
+        showShortcutHint('<kbd>Space</kbd> Play');
+      } else {
+        video.pause();
+        showShortcutHint('<kbd>Space</kbd> Pause');
+      }
+      break;
+    case 'arrowleft':
+      e.preventDefault();
+      video.currentTime = Math.max(0, video.currentTime - 10);
+      showShortcutHint('<kbd>←</kbd> -10s');
+      break;
+    case 'arrowright':
+      e.preventDefault();
+      video.currentTime = Math.min(video.duration, video.currentTime + 10);
+      showShortcutHint('<kbd>→</kbd> +10s');
+      break;
+    case 'arrowup':
+      e.preventDefault();
+      video.volume = Math.min(1, video.volume + 0.1);
+      showShortcutHint('<kbd>↑</kbd> Volume: ' + Math.round(video.volume * 100) + '%');
+      break;
+    case 'arrowdown':
+      e.preventDefault();
+      video.volume = Math.max(0, video.volume - 0.1);
+      showShortcutHint('<kbd>↓</kbd> Volume: ' + Math.round(video.volume * 100) + '%');
+      break;
+    case 'f':
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        showShortcutHint('<kbd>F</kbd> Exit Fullscreen');
+      } else {
+        video.requestFullscreen();
+        showShortcutHint('<kbd>F</kbd> Fullscreen');
+      }
+      break;
+    case 'm':
+      e.preventDefault();
+      video.muted = !video.muted;
+      showShortcutHint('<kbd>M</kbd> ' + (video.muted ? 'Muted' : 'Unmuted'));
+      break;
+    case 'n':
+      e.preventDefault();
+      goRelative(1);
+      showShortcutHint('<kbd>N</kbd> Next Episode');
+      break;
+    case ',':
+      e.preventDefault();
+      const newSpeed = Math.max(0.25, state.playbackRate - 0.25);
+      state.playbackRate = newSpeed;
+      video.playbackRate = newSpeed;
+      showShortcutHint('<kbd>&lt;</kbd> Speed: ' + newSpeed + 'x');
+      break;
+    case '.':
+      e.preventDefault();
+      const fasterSpeed = Math.min(2, state.playbackRate + 0.25);
+      state.playbackRate = fasterSpeed;
+      video.playbackRate = fasterSpeed;
+      showShortcutHint('<kbd>&gt;</kbd> Speed: ' + fasterSpeed + 'x');
+      break;
+  }
+});
+
+// Clear buttons
+$("clearContinue").onclick = () => {
+  if (confirm('Hapus semua riwayat tontonan?')) {
+    storage.set('continue_watching', {});
+    renderContinueWatching();
+    toast('🗑️ Riwayat dihapus');
+  }
+};
+
+$("clearFavorites").onclick = () => {
+  if (confirm('Hapus semua favorit?')) {
+    storage.set('favorites', {});
+    renderFavorites();
+    renderList();
+    toast('🗑️ Favorit dihapus');
+  }
+};
+
 $("playerOverlay").onclick = e => {
   if (e.target === $("playerOverlay")) closePlayer();
 };
 
+// ========== ANALYTICS ==========
+
+async function loadStatistics() {
+  try {
+    const res = await fetch('/analytics/stats');
+    const data = await res.json();
+    
+    // Update dashboard stats
+    $("statTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("statUniqueToday").textContent = formatNumber(data.unique_today || 0);
+    $("statTotalPlays").textContent = formatNumber(data.total_plays || 0);
+    $("statMostWatched").textContent = data.most_watched?.length || 0;
+    
+    // Update modal stats
+    $("modalTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("modalUniqueToday").textContent = formatNumber(data.unique_today || 0);
+    $("modalTotalPlays").textContent = formatNumber(data.total_plays || 0);
+    
+    // Render most watched list
+    renderMostWatched(data.most_watched || []);
+  } catch (err) {
+    console.error('Failed to load statistics:', err);
+  }
+}
+
+function formatNumber(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+  return num.toString();
+}
+
+function renderMostWatched(list) {
+  const container = $("mostWatchedList");
+  
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty">Belum ada data tontonan</div>';
+    return;
+  }
+  
+  container.innerHTML = list.map((item, index) => {
+    const rankClass = index === 0 ? 'top1' : index === 1 ? 'top2' : index === 2 ? 'top3' : '';
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    
+    return '<div class="watched-item">' +
+      '<div class="watched-rank ' + rankClass + '">' + (medal || (index + 1)) + '</div>' +
+      '<div class="watched-info">' +
+        '<div class="watched-title">' + esc(item.title) + '</div>' +
+        '<div class="watched-source">' + esc(item.source.toUpperCase()) + '</div>' +
+      '</div>' +
+      '<div class="watched-count">' +
+        '<span>▶️</span> ' + formatNumber(item.plays) +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function trackVideoPlay(source, id, title) {
+  try {
+    await fetch('/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'video_play',
+        content_id: id,
+        content_title: title,
+        source: source
+      })
+    });
+  } catch (err) {
+    console.error('Failed to track play:', err);
+  }
+}
+
+// Stats Modal Controls
+$("statsToggle").onclick = () => {
+  $("statsModal").classList.add("show");
+  loadStatistics();
+};
+
+$("closeStatsModal").onclick = () => {
+  $("statsModal").classList.remove("show");
+};
+
+$("refreshStats").onclick = () => {
+  loadStatistics();
+  toast("📊 Statistics refreshed");
+};
+
+$("statsModal").onclick = (e) => {
+  if (e.target === $("statsModal")) {
+    $("statsModal").classList.remove("show");
+  }
+};
+
 // ========== INIT ==========
+loadStatistics();
+renderContinueWatching();
+renderFavorites();
 switchSource("melolo");
+
+// Refresh stats every 30 seconds
+setInterval(() => {
+  loadStatistics();
+}, 30000);
 </script>
 </body>
 </html>`;
