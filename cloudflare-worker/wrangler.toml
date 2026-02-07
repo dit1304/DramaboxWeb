@@ -2,7 +2,6 @@ name = "dramabox-panel"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# KV Namespace for Analytics - ACTIVE
 [[kv_namespaces]]
 binding = "ANALYTICS"
 id = "527745873e3c44b7baa28c845ecf7ea0"
