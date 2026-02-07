@@ -63,22 +63,39 @@ async function trackVisitor(request, env) {
   
   try {
     const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const hour = now.toISOString().split('T')[1].split(':')[0]; // Current hour
     
-    // Increment total visitors
+    // Increment total visitors (all time)
     const totalKey = 'stats:total_visitors';
     const total = parseInt(await env.ANALYTICS.get(totalKey) || '0');
     await env.ANALYTICS.put(totalKey, (total + 1).toString());
     
-    // Track unique IPs today
+    // Track visitors per day (for 30 days stats)
+    const dailyKey = `stats:daily:${today}`;
+    const dailyCount = parseInt(await env.ANALYTICS.get(dailyKey) || '0');
+    await env.ANALYTICS.put(dailyKey, (dailyCount + 1).toString(), {
+      expirationTtl: 86400 * 35 // 35 days retention
+    });
+    
+    // Track unique IPs per day
     const uniqueKey = `stats:unique:${today}`;
     const uniqueIPs = JSON.parse(await env.ANALYTICS.get(uniqueKey) || '[]');
     if (!uniqueIPs.includes(ip)) {
       uniqueIPs.push(ip);
       await env.ANALYTICS.put(uniqueKey, JSON.stringify(uniqueIPs), {
-        expirationTtl: 86400 * 7 // 7 days
+        expirationTtl: 86400 * 35 // 35 days retention
       });
     }
+    
+    // Track hourly visitors (for 24h stats)
+    const hourlyKey = `stats:hourly:${today}:${hour}`;
+    const hourlyCount = parseInt(await env.ANALYTICS.get(hourlyKey) || '0');
+    await env.ANALYTICS.put(hourlyKey, (hourlyCount + 1).toString(), {
+      expirationTtl: 86400 * 2 // 2 days retention
+    });
+    
   } catch (e) {
     console.error('Analytics error:', e);
   }
@@ -137,8 +154,14 @@ async function getAnalytics(env) {
   if (!env.ANALYTICS) {
     const mockData = {
       total_visitors: 15420,
+      visitors_24h: 1285,
+      visitors_7d: 6840,
+      visitors_30d: 12150,
       unique_today: 342,
       total_plays: 8750,
+      plays_24h: 445,
+      plays_7d: 2340,
+      plays_30d: 6120,
       most_watched: [
         { title: "Sample Drama 1", source: "dramabox", plays: 1250 },
         { title: "Sample Movie 2", source: "dramamovie", plays: 980 },
@@ -152,11 +175,46 @@ async function getAnalytics(env) {
   }
   
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
     
+    // Total visitors (all time)
     const totalVisitors = parseInt(await env.ANALYTICS.get('stats:total_visitors') || '0');
+    
+    // Unique today
     const uniqueIPs = JSON.parse(await env.ANALYTICS.get(`stats:unique:${today}`) || '[]');
+    
+    // Total plays (all time)
     const totalPlays = parseInt(await env.ANALYTICS.get('stats:total_plays') || '0');
+    
+    // Calculate 24h visitors (from hourly data)
+    let visitors24h = 0;
+    const currentHour = parseInt(now.toISOString().split('T')[1].split(':')[0]);
+    for (let i = 0; i < 24; i++) {
+      const hourToCheck = (currentHour - i + 24) % 24;
+      const dateToCheck = new Date(now.getTime() - (i > currentHour ? 86400000 : 0));
+      const dayStr = dateToCheck.toISOString().split('T')[0];
+      const hourKey = `stats:hourly:${dayStr}:${hourToCheck.toString().padStart(2, '0')}`;
+      visitors24h += parseInt(await env.ANALYTICS.get(hourKey) || '0');
+    }
+    
+    // Calculate 7 days visitors
+    let visitors7d = 0;
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(now.getTime() - (i * 86400000));
+      const dayStr = date.toISOString().split('T')[0];
+      const dailyKey = `stats:daily:${dayStr}`;
+      visitors7d += parseInt(await env.ANALYTICS.get(dailyKey) || '0');
+    }
+    
+    // Calculate 30 days visitors
+    let visitors30d = 0;
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(now.getTime() - (i * 86400000));
+      const dayStr = date.toISOString().split('T')[0];
+      const dailyKey = `stats:daily:${dayStr}`;
+      visitors30d += parseInt(await env.ANALYTICS.get(dailyKey) || '0');
+    }
     
     // Get most watched (top 10)
     const list = await env.ANALYTICS.list({ prefix: 'play:' });
@@ -180,6 +238,9 @@ async function getAnalytics(env) {
     
     return new Response(JSON.stringify({
       total_visitors: totalVisitors,
+      visitors_24h: visitors24h,
+      visitors_7d: visitors7d,
+      visitors_30d: visitors30d,
       unique_today: uniqueIPs.length,
       total_plays: totalPlays,
       most_watched: mostWatched.slice(0, 10)
@@ -1537,6 +1598,27 @@ function htmlPage() {
       font-weight: 700;
     }
 
+    .stat-breakdown {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .stat-breakdown span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-breakdown strong {
+      color: var(--primary);
+      font-weight: 700;
+    }
+
     /* Most Watched Section */
     .most-watched-list {
       display: flex;
@@ -1947,6 +2029,11 @@ function htmlPage() {
         <div class="stat-icon">👥</div>
         <div class="stat-value" id="statTotalVisitors">0</div>
         <div class="stat-label">Total Visitors</div>
+        <div class="stat-breakdown">
+          <span>24h: <strong id="stat24h">0</strong></span>
+          <span>7d: <strong id="stat7d">0</strong></span>
+          <span>30d: <strong id="stat30d">0</strong></span>
+        </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon">🌟</div>
@@ -2069,12 +2156,51 @@ function htmlPage() {
         </div>
       </div>
 
-      <div class="stats-dashboard">
-        <div class="stat-card">
-          <div class="stat-icon">👥</div>
-          <div class="stat-value" id="modalTotalVisitors">0</div>
-          <div class="stat-label">Total Visitors</div>
+      <!-- Time-based Statistics -->
+      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 24px;">
+        <h3 style="font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+          <span>📈</span> Visitor Statistics
+        </h3>
+        <div style="display: grid; gap: 16px;">
+          <!-- 24 Hours -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-elevated); border-radius: var(--radius-sm); border-left: 4px solid #3b82f6;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">⏰ 24 HOURS</div>
+              <div style="font-size: 24px; font-weight: 900; color: #60a5fa;" id="modalVisitors24h">0</div>
+            </div>
+            <div style="font-size: 28px;">📊</div>
+          </div>
+          
+          <!-- 7 Days -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-elevated); border-radius: var(--radius-sm); border-left: 4px solid #8b5cf6;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">📅 7 DAYS</div>
+              <div style="font-size: 24px; font-weight: 900; color: #a78bfa;" id="modalVisitors7d">0</div>
+            </div>
+            <div style="font-size: 28px;">📈</div>
+          </div>
+          
+          <!-- 30 Days -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-elevated); border-radius: var(--radius-sm); border-left: 4px solid #ec4899;">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">📆 30 DAYS</div>
+              <div style="font-size: 24px; font-weight: 900; color: #f472b6;" id="modalVisitors30d">0</div>
+            </div>
+            <div style="font-size: 28px;">📊</div>
+          </div>
+          
+          <!-- Total All Time -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(236,72,153,0.1)); border-radius: var(--radius-sm); border: 2px solid var(--primary);">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">🌍 ALL TIME TOTAL</div>
+              <div style="font-size: 32px; font-weight: 900; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;" id="modalTotalVisitors">0</div>
+            </div>
+            <div style="font-size: 32px;">👥</div>
+          </div>
         </div>
+      </div>
+
+      <div class="stats-dashboard">
         <div class="stat-card">
           <div class="stat-icon">🌟</div>
           <div class="stat-value" id="modalUniqueToday">0</div>
@@ -2084,6 +2210,17 @@ function htmlPage() {
           <div class="stat-icon">▶️</div>
           <div class="stat-value" id="modalTotalPlays">0</div>
           <div class="stat-label">Total Plays</div>
+        </div>
+      </div>
+
+      <!-- KV Status Info -->
+      <div style="background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(16,185,129,0.05)); border: 1px solid rgba(34,197,94,0.3); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 12px; height: 12px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 12px #22c55e; animation: pulse 2s ease-in-out infinite;"></div>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: #22c55e; margin-bottom: 2px;" id="kvStatus">🔄 Checking KV Status...</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Real-time data updates setiap 30 detik</div>
+          </div>
         </div>
       </div>
 
@@ -2099,6 +2236,26 @@ function htmlPage() {
             <div class="spinner"></div>
             Loading statistics...
           </div>
+        </div>
+      </div>
+
+      <!-- Setup Guide -->
+      <div id="kvSetupGuide" style="background: linear-gradient(135deg, rgba(249,115,22,0.1), rgba(251,146,60,0.05)); border: 1px solid rgba(249,115,22,0.3); border-radius: var(--radius-sm); padding: 20px; margin-top: 24px; display: none;">
+        <div style="font-size: 16px; font-weight: 700; color: #fb923c; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <span>💡</span> Enable Real Statistics
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px;">
+          Untuk mendapatkan statistik REAL yang akurat:
+        </div>
+        <ol style="font-size: 12px; color: var(--text-muted); line-height: 1.8; margin-left: 20px;">
+          <li>Buat KV Namespace di Cloudflare Dashboard</li>
+          <li>Copy namespace ID</li>
+          <li>Uncomment & paste ID di <code style="background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: monospace;">wrangler.toml</code></li>
+          <li>Deploy ulang: <code style="background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: monospace;">wrangler deploy</code></li>
+        </ol>
+        <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px; font-family: monospace; font-size: 11px; color: var(--text-muted);">
+          <div style="color: #22c55e;">npx wrangler kv:namespace create "ANALYTICS"</div>
+          <div style="margin-top: 4px; color: #60a5fa;"># Copy output ke wrangler.toml</div>
         </div>
       </div>
     </div>
@@ -3373,17 +3530,65 @@ async function loadStatistics() {
     
     // Update dashboard stats
     $("statTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("stat24h").textContent = formatNumber(data.visitors_24h || 0);
+    $("stat7d").textContent = formatNumber(data.visitors_7d || 0);
+    $("stat30d").textContent = formatNumber(data.visitors_30d || 0);
     $("statUniqueToday").textContent = formatNumber(data.unique_today || 0);
     $("statTotalPlays").textContent = formatNumber(data.total_plays || 0);
     $("statMostWatched").textContent = data.most_watched?.length || 0;
     
     // Update modal stats
     $("modalTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("modalVisitors24h").textContent = formatNumber(data.visitors_24h || 0);
+    $("modalVisitors7d").textContent = formatNumber(data.visitors_7d || 0);
+    $("modalVisitors30d").textContent = formatNumber(data.visitors_30d || 0);
     $("modalUniqueToday").textContent = formatNumber(data.unique_today || 0);
     $("modalTotalPlays").textContent = formatNumber(data.total_plays || 0);
     
     // Render most watched list
     renderMostWatched(data.most_watched || []);
+    
+    // Detect if using real KV data or mock data
+    const isRealData = !(data.total_visitors === 15420 && data.visitors_24h === 1285);
+    const isMockData = !isRealData;
+    
+    // Update KV status in modal
+    const kvStatusEl = document.getElementById('kvStatus');
+    if (kvStatusEl) {
+      if (isRealData) {
+        kvStatusEl.innerHTML = '✅ Real-time Statistics Active (KV Connected)';
+        kvStatusEl.style.color = '#22c55e';
+      } else {
+        kvStatusEl.innerHTML = '⚠️ Mock Data Mode (KV Not Configured Yet)';
+        kvStatusEl.style.color = '#f59e0b';
+      }
+    }
+    
+    // Show/hide setup guide
+    const setupGuide = document.getElementById('kvSetupGuide');
+    if (setupGuide) {
+      setupGuide.style.display = isMockData ? 'block' : 'none';
+    }
+    
+    // Add visual indicator if using real data
+    if (isRealData) {
+      const existingIndicator = document.getElementById('liveStatsIndicator');
+      if (!existingIndicator) {
+        const indicator = document.createElement('div');
+        indicator.id = 'liveStatsIndicator';
+        indicator.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 8px 16px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); border-radius: 8px; font-size: 12px; font-weight: 700; color: #22c55e; z-index: 998; display: flex; align-items: center; gap: 6px; backdrop-filter: blur(8px);';
+        indicator.innerHTML = '<span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 2s ease-in-out infinite;"></span> LIVE STATS';
+        document.body.appendChild(indicator);
+        
+        // Add pulse animation
+        if (!document.getElementById('pulseAnimation')) {
+          const style = document.createElement('style');
+          style.id = 'pulseAnimation';
+          style.textContent = '@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }';
+          document.head.appendChild(style);
+        }
+      }
+    }
   } catch (err) {
     console.error('Failed to load statistics:', err);
   }
