@@ -4,9 +4,9 @@ compatibility_date = "2024-01-01"
 
 # KV Namespace for Analytics (create via Cloudflare Dashboard)
 # After creating KV namespace, uncomment and set the ID:
- [[kv_namespaces]]
- binding = "ANALYTICS"
- id = "527745873e3c44b7baa28c845ecf7ea0"
+[[kv_namespaces]]
+binding = "ANALYTICS"
+id = "527745873e3c44b7baa28c845ecf7ea0"
 
 # Uncomment and set if you want token protection
 # [vars]
