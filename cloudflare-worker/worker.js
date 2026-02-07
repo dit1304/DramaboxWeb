@@ -1135,6 +1135,9 @@ function htmlPage() {
         <button class="source-tab" data-source="dramabox">
           <span class="source-icon">🎬</span> Dramabox
         </button>
+        <button class="source-tab" data-source="dramamovie">
+          <span class="source-icon">🎭</span> DramaMovie
+        </button>
         <button class="source-tab" data-source="samehadaku">
           <span class="source-icon">🎌</span> Samehadaku
         </button>
@@ -1214,6 +1217,13 @@ const SOURCES = {
       { id: "new", label: "Terbaru" }
     ]
   },
+  dramamovie: {
+    name: "DramaMovie",
+    color: "#ec4899",
+    navTabs: [
+      { id: "search", label: "Search" }
+    ]
+  },
   samehadaku: {
     name: "Samehadaku",
     color: "#f97316",
@@ -1289,10 +1299,11 @@ async function switchSource(source) {
   renderNavTabs();
 
   const firstTab = SOURCES[source].navTabs[0].id;
-  if (source === "samehadaku" && firstTab === "search") {
-    // For samehadaku, show empty state with search prompt
+  if ((source === "samehadaku" || source === "dramamovie") && firstTab === "search") {
+    // For search-only sources, show empty state with search prompt
     state.mode = "search";
-    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari anime...</div>';
+    const searchPrompt = source === "samehadaku" ? "anime" : "drama/movie";
+    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari ' + searchPrompt + '...</div>';
     setActiveNav("search");
   } else {
     loadList(firstTab, 1);
@@ -1387,6 +1398,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadMeloloList(mode, page, query);
     } else if (state.source === "dramabox") {
       await loadDramaboxList(mode, page, query);
+    } else if (state.source === "dramamovie") {
+      await loadDramaMovieList(mode, page, query);
     } else if (state.source === "samehadaku") {
       await loadSamehadakuList(mode, page, query);
     }
@@ -1465,6 +1478,30 @@ async function loadDramaboxList(mode, page, query) {
   state.totalPages = mode === "search" ? 1 : 10;
 }
 
+async function loadDramaMovieList(mode, page, query) {
+  if (mode === "search" && !query) {
+    state.list = [];
+    return;
+  }
+
+  let path = "/drama/search?q=" + encodeURIComponent(query);
+  const json = await jget(path);
+  
+  const dramaList = json?.data || [];
+  
+  state.list = dramaList.slice(0, 20).map(item => ({
+    id: item.id || "",
+    link: item.link || "",
+    title: item.title || "Untitled",
+    img: item.image || "",
+    badge: item.category?.split(',').slice(0, 2).join(' • ') || "Drama",
+    hits: item.hits || "0",
+    type: "dramamovie"
+  }));
+
+  state.totalPages = 1;
+}
+
 async function loadSamehadakuList(mode, page, query) {
   if (mode === "search" && !query) {
     state.list = [];
@@ -1499,7 +1536,12 @@ function renderList() {
   }
 
   grid.innerHTML = state.list.map(item => {
-    const badgeClass = item.type === 'melolo' ? 'red' : item.type === 'dramabox' ? 'badge' : item.type === 'samehadaku' ? 'cyan' : '';
+    let badgeClass = '';
+    if (item.type === 'melolo') badgeClass = 'red';
+    else if (item.type === 'dramabox') badgeClass = 'badge';
+    else if (item.type === 'dramamovie') badgeClass = 'badge';
+    else if (item.type === 'samehadaku') badgeClass = 'cyan';
+    
     return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-slug=\\"" + esc(item.slug || '') + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
       "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
         "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
@@ -1538,6 +1580,8 @@ async function openContent(id, title, type, slug) {
       await loadMeloloEpisodes(id);
     } else if (type === "dramabox") {
       await loadDramaboxEpisodes(id);
+    } else if (type === "dramamovie") {
+      await loadDramaMovieEpisodes(id);
     } else if (type === "samehadaku") {
       await loadSamehadakuEpisodes(title);
     }
@@ -1583,6 +1627,23 @@ async function loadDramaboxEpisodes(dramaId) {
     slug: x?.chapterId || "",
     label: "Ep " + (Number(x?.chapterIndex) + 1)
   })).sort((a, b) => a.index - b.index);
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
+async function loadDramaMovieEpisodes(dramaId) {
+  const json = await jget("/drama/info?id=" + encodeURIComponent(dramaId));
+  const episodes = json?.data_episode || [];
+
+  state.episodes = episodes.map((ep, i) => ({
+    index: i,
+    episodeId: ep.episode_id || "",
+    streamingId: ep.streaming || "",
+    label: ep.episode_label || ("Episode " + (i + 1)),
+    image: ep.episode_image || ""
+  }));
 
   if (state.episodes.length) {
     state.currentEpIndex = 0;
@@ -1675,6 +1736,8 @@ async function loadAndPlay() {
         await loadMeloloVideo(ep);
       } else if (state.source === "dramabox") {
         await loadDramaboxVideo(ep);
+      } else if (state.source === "dramamovie") {
+        await loadDramaMovieVideo(ep);
       }
 
       buildQualityDropdown();
@@ -1716,6 +1779,49 @@ async function loadDramaboxVideo(ep) {
     url: q.videoPath || q.videoUrl || "",
     isDefault: q.isDefault === 1
   })) : [];
+
+  if (state.qualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
+}
+
+async function loadDramaMovieVideo(ep) {
+  const json = await jget("/drama/stream?id=" + encodeURIComponent(ep.streamingId));
+
+  if (!json?.data_stream || json.data_stream.length === 0) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  const stream = json.data_stream[0];
+  state.qualities = [];
+
+  // Add qualities in order: 720p, 480p, 360p
+  if (stream["720p"]) {
+    state.qualities.push({
+      label: "720p" + (stream["720p_size"] ? " (" + stream["720p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["720p"],
+      isDefault: true
+    });
+  }
+
+  if (stream["480p"]) {
+    state.qualities.push({
+      label: "480p" + (stream["480p_size"] ? " (" + stream["480p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["480p"],
+      isDefault: !stream["720p"]
+    });
+  }
+
+  if (stream["360p"]) {
+    state.qualities.push({
+      label: "360p" + (stream["360p_size"] ? " (" + stream["360p_size"] + ")" : ""),
+      value: state.qualities.length,
+      url: stream["360p"],
+      isDefault: !stream["720p"] && !stream["480p"]
+    });
+  }
 
   if (state.qualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
