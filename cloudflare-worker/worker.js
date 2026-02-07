@@ -934,6 +934,385 @@ function htmlPage() {
       display: none !important;
     }
 
+    /* Continue Watching & Favorites Section */
+    .feature-section {
+      margin-bottom: 32px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 0 4px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-icon {
+      font-size: 24px;
+    }
+
+    .clear-btn {
+      padding: 6px 14px;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #ef4444;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .clear-btn:hover {
+      background: rgba(239,68,68,0.2);
+      transform: translateY(-2px);
+    }
+
+    .horizontal-scroll {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding: 8px 4px 16px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--primary) transparent;
+    }
+
+    .horizontal-scroll::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .horizontal-scroll::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 3px;
+    }
+
+    .mini-card {
+      min-width: 160px;
+      max-width: 160px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    .mini-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+      box-shadow: 0 8px 24px rgba(139,92,246,0.3);
+    }
+
+    .mini-card-img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      background: var(--bg-elevated);
+    }
+
+    .mini-card-body {
+      padding: 10px;
+    }
+
+    .mini-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.3;
+    }
+
+    .mini-card-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(139,92,246,0.2);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--gradient);
+      transition: width 0.3s ease;
+    }
+
+    .favorite-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      z-index: 10;
+    }
+
+    .favorite-btn:hover {
+      background: rgba(0,0,0,0.8);
+      transform: scale(1.1);
+    }
+
+    .favorite-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+    }
+
+    /* Video Controls Enhancement */
+    .speed-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .speed-btn {
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    .speed-btn:hover {
+      border-color: var(--primary);
+      background: var(--bg-elevated);
+    }
+
+    .speed-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    .theater-btn, .pip-btn {
+      padding: 10px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .theater-btn:hover, .pip-btn:hover {
+      border-color: var(--primary);
+      background: var(--bg-elevated);
+      transform: translateY(-2px);
+    }
+
+    .theater-btn.active {
+      background: var(--gradient);
+      border-color: transparent;
+      color: white;
+    }
+
+    /* Theater Mode */
+    body.theater-mode .player-container {
+      max-width: 100%;
+    }
+
+    body.theater-mode .video-wrapper {
+      max-height: 85vh;
+    }
+
+    /* Auto Next Countdown */
+    .auto-next-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(12px);
+      padding: 32px 48px;
+      border-radius: 20px;
+      text-align: center;
+      z-index: 100;
+      border: 2px solid var(--primary);
+      box-shadow: 0 8px 32px rgba(139,92,246,0.5);
+      display: none;
+    }
+
+    .auto-next-overlay.show {
+      display: block;
+      animation: fadeInScale 0.3s ease-out;
+    }
+
+    @keyframes fadeInScale {
+      from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+
+    .countdown-number {
+      font-size: 64px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 16px 0;
+    }
+
+    .countdown-text {
+      font-size: 16px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .countdown-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .countdown-btn {
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+    }
+
+    .countdown-btn.primary {
+      background: var(--gradient);
+      color: white;
+    }
+
+    .countdown-btn.secondary {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .countdown-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(139,92,246,0.4);
+    }
+
+    /* Search Suggestions */
+    .search-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 1000;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .search-suggestions.show {
+      display: block;
+    }
+
+    .suggestion-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover {
+      background: var(--bg-elevated);
+    }
+
+    .suggestion-icon {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .suggestion-text {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    /* Keyboard Shortcuts Indicator */
+    .shortcuts-hint {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(12px);
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+      z-index: 1001;
+      display: none;
+      animation: fadeInUp 0.3s ease-out;
+    }
+
+    .shortcuts-hint.show {
+      display: block;
+    }
+
+    .shortcuts-hint kbd {
+      background: var(--bg-elevated);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      margin: 0 2px;
+    }
+
     /* Loading */
     .loading {
       text-align: center;
@@ -1114,6 +1493,32 @@ function htmlPage() {
         min-width: 120px;
         justify-content: center;
       }
+      .speed-control {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .theater-btn, .pip-btn {
+        flex: 1;
+        min-width: 100px;
+        justify-content: center;
+      }
+      .feature-section {
+        margin-bottom: 24px;
+      }
+      .section-title {
+        font-size: 16px;
+      }
+      .section-icon {
+        font-size: 20px;
+      }
+      .auto-next-overlay {
+        padding: 24px 32px;
+        max-width: 90%;
+      }
+      .countdown-number {
+        font-size: 48px;
+      }
     }
   </style>
 </head>
@@ -1151,11 +1556,36 @@ function htmlPage() {
         <span class="logo-text" id="logoText">MELOLO</span>
       </div>
       <nav class="nav" id="navTabs"></nav>
-      <div class="search-box">
-        <input type="text" class="search-input" id="searchInput" placeholder="Cari..." />
+      <div class="search-box" style="position: relative;">
+        <input type="text" class="search-input" id="searchInput" placeholder="Cari..." autocomplete="off" />
         <button class="search-btn" id="btnSearch">Cari</button>
+        <div class="search-suggestions" id="searchSuggestions"></div>
       </div>
     </header>
+
+    <!-- Continue Watching Section -->
+    <div class="feature-section" id="continueWatchingSection" style="display: none;">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">⏱️</span>
+          Lanjutkan Menonton
+        </h2>
+        <button class="clear-btn" id="clearContinue">Clear All</button>
+      </div>
+      <div class="horizontal-scroll" id="continueWatchingList"></div>
+    </div>
+
+    <!-- Favorites Section -->
+    <div class="feature-section" id="favoritesSection" style="display: none;">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">⭐</span>
+          Favorit Saya
+        </h2>
+        <button class="clear-btn" id="clearFavorites">Clear All</button>
+      </div>
+      <div class="horizontal-scroll" id="favoritesList"></div>
+    </div>
 
     <main id="grid" class="grid"></main>
 
@@ -1173,6 +1603,14 @@ function htmlPage() {
       </div>
       <div class="video-wrapper" id="videoWrapper">
         <video id="videoPlayer" controls playsinline></video>
+        <div class="auto-next-overlay" id="autoNextOverlay">
+          <div class="countdown-text">Episode berikutnya dimulai dalam</div>
+          <div class="countdown-number" id="countdownNumber">10</div>
+          <div class="countdown-actions">
+            <button class="countdown-btn secondary" id="cancelAutoNext">Cancel</button>
+            <button class="countdown-btn primary" id="playNextNow">Play Now</button>
+          </div>
+        </div>
       </div>
       <div class="controls" id="videoControls">
         <button class="control-btn" id="prevEp">◀ Prev</button>
@@ -1180,6 +1618,21 @@ function htmlPage() {
         <select class="quality-select" id="qualitySelect">
           <option value="">Auto</option>
         </select>
+        <div class="speed-control">
+          <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Speed:</span>
+          <button class="speed-btn" data-speed="0.5">0.5x</button>
+          <button class="speed-btn" data-speed="0.75">0.75x</button>
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="1.25">1.25x</button>
+          <button class="speed-btn" data-speed="1.5">1.5x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+        </div>
+        <button class="theater-btn" id="theaterBtn">
+          <span>🎬</span> Theater
+        </button>
+        <button class="pip-btn" id="pipBtn">
+          <span>📺</span> PiP
+        </button>
         <span class="status-text" id="statusText">Siap</span>
       </div>
       <div class="download-section" id="downloadSection" style="display: none;">
@@ -1246,6 +1699,111 @@ const state = {
   episodes: [],
   currentEpIndex: 0,
   qualities: [],
+  playbackRate: 1,
+  theaterMode: false,
+  autoNextCountdown: null,
+};
+
+// LocalStorage Manager
+const storage = {
+  get(key) {
+    try {
+      const item = localStorage.getItem('streambox_' + key);
+      return item ? JSON.parse(item) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem('streambox_' + key, JSON.stringify(value));
+    } catch (e) {
+      console.error('Storage error:', e);
+    }
+  },
+  remove(key) {
+    try {
+      localStorage.removeItem('streambox_' + key);
+    } catch (e) {}
+  }
+};
+
+// Continue Watching Manager
+const continueWatching = {
+  save(source, id, title, img, episode, currentTime, duration) {
+    const watching = storage.get('continue_watching') || {};
+    const key = source + '_' + id;
+    watching[key] = {
+      source, id, title, img, episode, currentTime, duration,
+      timestamp: Date.now()
+    };
+    storage.set('continue_watching', watching);
+  },
+  get() {
+    const watching = storage.get('continue_watching') || {};
+    return Object.values(watching).sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+  },
+  remove(source, id) {
+    const watching = storage.get('continue_watching') || {};
+    delete watching[source + '_' + id];
+    storage.set('continue_watching', watching);
+  }
+};
+
+// Favorites Manager
+const favorites = {
+  toggle(source, id, title, img, badge) {
+    const favs = storage.get('favorites') || {};
+    const key = source + '_' + id;
+    if (favs[key]) {
+      delete favs[key];
+      storage.set('favorites', favs);
+      return false;
+    } else {
+      favs[key] = { source, id, title, img, badge, timestamp: Date.now() };
+      storage.set('favorites', favs);
+      return true;
+    }
+  },
+  isFavorite(source, id) {
+    const favs = storage.get('favorites') || {};
+    return !!(favs[source + '_' + id]);
+  },
+  get() {
+    const favs = storage.get('favorites') || {};
+    return Object.values(favs).sort((a, b) => b.timestamp - a.timestamp);
+  },
+  remove(source, id) {
+    const favs = storage.get('favorites') || {};
+    delete favs[source + '_' + id];
+    storage.set('favorites', favs);
+  }
+};
+
+// Search History Manager
+const searchHistory = {
+  add(source, query) {
+    if (!query || query.length < 2) return;
+    const history = storage.get('search_history') || {};
+    if (!history[source]) history[source] = [];
+    history[source] = history[source].filter(q => q !== query);
+    history[source].unshift(query);
+    history[source] = history[source].slice(0, 10);
+    storage.set('search_history', history);
+  },
+  get(source) {
+    const history = storage.get('search_history') || {};
+    return history[source] || [];
+  },
+  clear(source) {
+    const history = storage.get('search_history') || {};
+    if (source) {
+      delete history[source];
+    } else {
+      return {};
+    }
+    storage.set('search_history', history);
+  }
 };
 
 const $ = id => document.getElementById(id);
@@ -1278,6 +1836,74 @@ async function jget(path) {
 
 function setStatus(text) {
   $("statusText").textContent = text;
+}
+
+// ========== CONTINUE WATCHING & FAVORITES ==========
+
+function renderContinueWatching() {
+  const list = continueWatching.get();
+  const section = $("continueWatchingSection");
+  const container = $("continueWatchingList");
+  
+  if (list.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  
+  section.style.display = "block";
+  container.innerHTML = list.map(item => {
+    const progress = (item.currentTime / item.duration) * 100;
+    return '<div class="mini-card" data-source="' + item.source + '" data-id="' + item.id + '">' +
+      '<img class="mini-card-img" src="' + esc(item.img) + '" alt="' + esc(item.title) + '" />' +
+      '<div class="progress-bar"><div class="progress-fill" style="width: ' + progress + '%"></div></div>' +
+      '<div class="mini-card-body">' +
+        '<div class="mini-card-title">' + esc(item.title) + '</div>' +
+        '<div class="mini-card-meta">' + esc(item.episode) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  
+  container.querySelectorAll('.mini-card').forEach(card => {
+    card.onclick = () => {
+      state.source = card.dataset.source;
+      switchSource(card.dataset.source);
+      setTimeout(() => {
+        openContent(card.dataset.id, '', card.dataset.source, '');
+      }, 500);
+    };
+  });
+}
+
+function renderFavorites() {
+  const list = favorites.get();
+  const section = $("favoritesSection");
+  const container = $("favoritesList");
+  
+  if (list.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  
+  section.style.display = "block";
+  container.innerHTML = list.map(item => {
+    return '<div class="mini-card" data-source="' + item.source + '" data-id="' + item.id + '">' +
+      '<img class="mini-card-img" src="' + esc(item.img) + '" alt="' + esc(item.title) + '" />' +
+      '<div class="mini-card-body">' +
+        '<div class="mini-card-title">' + esc(item.title) + '</div>' +
+        '<div class="mini-card-meta">' + esc(item.badge) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  
+  container.querySelectorAll('.mini-card').forEach(card => {
+    card.onclick = () => {
+      state.source = card.dataset.source;
+      switchSource(card.dataset.source);
+      setTimeout(() => {
+        openContent(card.dataset.id, '', card.dataset.source, '');
+      }, 500);
+    };
+  });
 }
 
 // ========== SOURCE SWITCHING ==========
@@ -1542,7 +2168,18 @@ function renderList() {
     else if (item.type === 'dramamovie') badgeClass = 'badge';
     else if (item.type === 'samehadaku') badgeClass = 'cyan';
     
-    return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-slug=\\"" + esc(item.slug || '') + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\">" +
+    const isFav = favorites.isFavorite(item.type, item.id);
+    const favIcon = isFav ? '❤️' : '🤍';
+    
+    // Add trending badge if hits > 500k
+    let trendingBadge = '';
+    if (item.hits && parseInt(item.hits) > 500000) {
+      trendingBadge = '<div style="position: absolute; top: 8px; left: 8px; background: linear-gradient(135deg, #ef4444, #dc2626); padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; color: white; box-shadow: 0 2px 8px rgba(239,68,68,0.4);">🔥 Trending</div>';
+    }
+    
+    return "<div class=\\"card\\" data-id=\\"" + esc(item.id) + "\\" data-slug=\\"" + esc(item.slug || '') + "\\" data-title=\\"" + esc(item.title) + "\\" data-type=\\"" + item.type + "\\" data-badge=\\"" + esc(item.badge) + "\\" data-img=\\"" + esc(item.img) + "\\">" +
+      trendingBadge +
+      "<div class=\\"favorite-btn " + (isFav ? 'active' : '') + "\\" data-action=\\"favorite\\">" + favIcon + "</div>" +
       "<img class=\\"card-img\\" src=\\"" + esc(item.img) + "\\" alt=\\"" + esc(item.title) + "\\" loading=\\"lazy\\" " +
         "onerror=\\"this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 150%22><rect fill=%22%231c1c22%22 width=%22100%22 height=%22150%22/><text x=%2250%22 y=%2275%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2210%22>No Image</text></svg>'\\" />" +
       "<div class=\\"card-body\\">" +
@@ -1556,7 +2193,28 @@ function renderList() {
   }).join("");
 
   grid.querySelectorAll(".card").forEach(card => {
-    card.onclick = () => openContent(card.dataset.id, card.dataset.title, card.dataset.type, card.dataset.slug);
+    const favBtn = card.querySelector('[data-action="favorite"]');
+    if (favBtn) {
+      favBtn.onclick = (e) => {
+        e.stopPropagation();
+        const isFav = favorites.toggle(
+          card.dataset.type,
+          card.dataset.id,
+          card.dataset.title,
+          card.dataset.img,
+          card.dataset.badge
+        );
+        favBtn.classList.toggle('active', isFav);
+        favBtn.textContent = isFav ? '❤️' : '🤍';
+        toast(isFav ? '➕ Ditambahkan ke favorit' : '➖ Dihapus dari favorit');
+        renderFavorites();
+      };
+    }
+    
+    card.onclick = (e) => {
+      if (e.target.closest('[data-action="favorite"]')) return;
+      openContent(card.dataset.id, card.dataset.title, card.dataset.type, card.dataset.slug);
+    };
   });
 }
 
@@ -1673,6 +2331,11 @@ function closePlayer() {
   const video = $("videoPlayer");
   video.pause();
   video.src = "";
+  cancelAutoNext();
+  state.theaterMode = false;
+  document.body.classList.remove('theater-mode');
+  $("theaterBtn").classList.remove('active');
+  renderContinueWatching();
 }
 
 function renderEpisodes() {
@@ -1971,25 +2634,280 @@ document.querySelectorAll(".source-tab").forEach(tab => {
   tab.onclick = () => switchSource(tab.dataset.source);
 });
 
+
+// ========== SEARCH WITH HISTORY ==========
+
+function showSearchSuggestions() {
+  const history = searchHistory.get(state.source);
+  const suggestions = $("searchSuggestions");
+  
+  if (history.length === 0) {
+    suggestions.classList.remove("show");
+    return;
+  }
+  
+  suggestions.innerHTML = history.map(query => 
+    '<div class="suggestion-item" data-query="' + esc(query) + '">' +
+      '<span class="suggestion-icon">🔍</span>' +
+      '<span class="suggestion-text">' + esc(query) + '</span>' +
+    '</div>'
+  ).join('');
+  
+  suggestions.querySelectorAll('.suggestion-item').forEach(item => {
+    item.onclick = () => {
+      $("searchInput").value = item.dataset.query;
+      $("btnSearch").click();
+      suggestions.classList.remove("show");
+    };
+  });
+  
+  suggestions.classList.add("show");
+}
+
+$("searchInput").onfocus = () => showSearchSuggestions();
+$("searchInput").onblur = () => setTimeout(() => $("searchSuggestions").classList.remove("show"), 200);
+
+$("searchInput").onkeydown = e => {
+  if (e.key === "Enter") {
+    $("btnSearch").click();
+    $("searchSuggestions").classList.remove("show");
+  }
+};
+
 $("btnSearch").onclick = () => {
   const q = $("searchInput").value.trim();
   if (!q) return toast("Masukkan judul dulu");
+  searchHistory.add(state.source, q);
   loadList("search", 1, q);
 };
 
-$("searchInput").onkeydown = e => {
-  if (e.key === "Enter") $("btnSearch").click();
-};
+// ========== PLAYER ENHANCEMENTS ==========
 
 $("closePlayer").onclick = closePlayer;
 $("prevEp").onclick = () => goRelative(-1);
 $("nextEp").onclick = () => goRelative(1);
+
+// Speed Control
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.onclick = () => {
+    const speed = parseFloat(btn.dataset.speed);
+    state.playbackRate = speed;
+    $("videoPlayer").playbackRate = speed;
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    toast('🎬 Speed: ' + speed + 'x');
+  };
+});
+
+// Theater Mode
+$("theaterBtn").onclick = () => {
+  state.theaterMode = !state.theaterMode;
+  document.body.classList.toggle('theater-mode', state.theaterMode);
+  $("theaterBtn").classList.toggle('active', state.theaterMode);
+  toast(state.theaterMode ? '🎬 Theater Mode ON' : '🎬 Theater Mode OFF');
+};
+
+// Picture in Picture
+$("pipBtn").onclick = async () => {
+  const video = $("videoPlayer");
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      toast('📺 PiP OFF');
+    } else {
+      await video.requestPictureInPicture();
+      toast('📺 PiP ON');
+    }
+  } catch (err) {
+    toast('❌ PiP not supported');
+  }
+};
+
+// Auto Next Episode
+let autoNextTimer = null;
+let autoNextCountdown = 10;
+
+function startAutoNext() {
+  if (state.currentEpIndex >= state.episodes.length - 1) return;
+  
+  autoNextCountdown = 10;
+  $("autoNextOverlay").classList.add("show");
+  $("countdownNumber").textContent = autoNextCountdown;
+  
+  autoNextTimer = setInterval(() => {
+    autoNextCountdown--;
+    $("countdownNumber").textContent = autoNextCountdown;
+    
+    if (autoNextCountdown <= 0) {
+      clearInterval(autoNextTimer);
+      $("autoNextOverlay").classList.remove("show");
+      goRelative(1);
+    }
+  }, 1000);
+}
+
+function cancelAutoNext() {
+  if (autoNextTimer) {
+    clearInterval(autoNextTimer);
+    autoNextTimer = null;
+  }
+  $("autoNextOverlay").classList.remove("show");
+}
+
+$("cancelAutoNext").onclick = () => {
+  cancelAutoNext();
+  toast('⏹️ Auto next cancelled');
+};
+
+$("playNextNow").onclick = () => {
+  cancelAutoNext();
+  goRelative(1);
+};
+
+// Video ended event - trigger auto next
+videoPlayer.addEventListener('ended', () => {
+  if (state.source !== 'samehadaku') {
+    startAutoNext();
+  }
+});
+
+// Save continue watching progress
+videoPlayer.addEventListener('timeupdate', () => {
+  const video = $("videoPlayer");
+  if (video.currentTime > 5 && video.duration > 0) {
+    const ep = state.episodes[state.currentEpIndex];
+    if (ep && state.currentTitle) {
+      continueWatching.save(
+        state.source,
+        state.currentId,
+        state.currentTitle,
+        state.list.find(item => item.id === state.currentId)?.img || '',
+        ep.label,
+        video.currentTime,
+        video.duration
+      );
+    }
+  }
+});
+
+// Keyboard Shortcuts
+let shortcutHintTimeout;
+
+function showShortcutHint(text) {
+  const hint = document.createElement('div');
+  hint.className = 'shortcuts-hint show';
+  hint.innerHTML = text;
+  document.body.appendChild(hint);
+  
+  clearTimeout(shortcutHintTimeout);
+  shortcutHintTimeout = setTimeout(() => {
+    hint.classList.remove('show');
+    setTimeout(() => hint.remove(), 300);
+  }, 2000);
+}
+
+document.addEventListener('keydown', (e) => {
+  // Don't trigger shortcuts when typing in input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  
+  const video = $("videoPlayer");
+  const playerActive = $("playerOverlay").classList.contains('active');
+  
+  if (!playerActive) return;
+  
+  switch(e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      if (video.paused) {
+        video.play();
+        showShortcutHint('<kbd>Space</kbd> Play');
+      } else {
+        video.pause();
+        showShortcutHint('<kbd>Space</kbd> Pause');
+      }
+      break;
+    case 'arrowleft':
+      e.preventDefault();
+      video.currentTime = Math.max(0, video.currentTime - 10);
+      showShortcutHint('<kbd>←</kbd> -10s');
+      break;
+    case 'arrowright':
+      e.preventDefault();
+      video.currentTime = Math.min(video.duration, video.currentTime + 10);
+      showShortcutHint('<kbd>→</kbd> +10s');
+      break;
+    case 'arrowup':
+      e.preventDefault();
+      video.volume = Math.min(1, video.volume + 0.1);
+      showShortcutHint('<kbd>↑</kbd> Volume: ' + Math.round(video.volume * 100) + '%');
+      break;
+    case 'arrowdown':
+      e.preventDefault();
+      video.volume = Math.max(0, video.volume - 0.1);
+      showShortcutHint('<kbd>↓</kbd> Volume: ' + Math.round(video.volume * 100) + '%');
+      break;
+    case 'f':
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        showShortcutHint('<kbd>F</kbd> Exit Fullscreen');
+      } else {
+        video.requestFullscreen();
+        showShortcutHint('<kbd>F</kbd> Fullscreen');
+      }
+      break;
+    case 'm':
+      e.preventDefault();
+      video.muted = !video.muted;
+      showShortcutHint('<kbd>M</kbd> ' + (video.muted ? 'Muted' : 'Unmuted'));
+      break;
+    case 'n':
+      e.preventDefault();
+      goRelative(1);
+      showShortcutHint('<kbd>N</kbd> Next Episode');
+      break;
+    case ',':
+      e.preventDefault();
+      const newSpeed = Math.max(0.25, state.playbackRate - 0.25);
+      state.playbackRate = newSpeed;
+      video.playbackRate = newSpeed;
+      showShortcutHint('<kbd>&lt;</kbd> Speed: ' + newSpeed + 'x');
+      break;
+    case '.':
+      e.preventDefault();
+      const fasterSpeed = Math.min(2, state.playbackRate + 0.25);
+      state.playbackRate = fasterSpeed;
+      video.playbackRate = fasterSpeed;
+      showShortcutHint('<kbd>&gt;</kbd> Speed: ' + fasterSpeed + 'x');
+      break;
+  }
+});
+
+// Clear buttons
+$("clearContinue").onclick = () => {
+  if (confirm('Hapus semua riwayat tontonan?')) {
+    storage.set('continue_watching', {});
+    renderContinueWatching();
+    toast('🗑️ Riwayat dihapus');
+  }
+};
+
+$("clearFavorites").onclick = () => {
+  if (confirm('Hapus semua favorit?')) {
+    storage.set('favorites', {});
+    renderFavorites();
+    renderList();
+    toast('🗑️ Favorit dihapus');
+  }
+};
 
 $("playerOverlay").onclick = e => {
   if (e.target === $("playerOverlay")) closePlayer();
 };
 
 // ========== INIT ==========
+renderContinueWatching();
+renderFavorites();
 switchSource("melolo");
 </script>
 </body>
