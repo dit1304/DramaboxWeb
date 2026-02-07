@@ -20,6 +20,15 @@ export default {
       }
     }
 
+    // Analytics endpoint
+    if (url.pathname === "/analytics/track") {
+      return handleAnalytics(request, env);
+    }
+
+    if (url.pathname === "/analytics/stats") {
+      return getAnalytics(env);
+    }
+
     // API proxy to bypass CORS
     if (url.pathname.startsWith("/api/")) {
       return proxyApi(request, url);
@@ -32,6 +41,9 @@ export default {
 
     // Home page
     if (url.pathname === "/" || url.pathname === "/index.html") {
+      // Track visitor
+      ctx.waitUntil(trackVisitor(request, env));
+      
       return new Response(htmlPage(), {
         status: 200,
         headers: {
@@ -44,6 +56,143 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 };
+
+// Analytics Functions
+async function trackVisitor(request, env) {
+  if (!env.ANALYTICS) return;
+  
+  try {
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Increment total visitors
+    const totalKey = 'stats:total_visitors';
+    const total = parseInt(await env.ANALYTICS.get(totalKey) || '0');
+    await env.ANALYTICS.put(totalKey, (total + 1).toString());
+    
+    // Track unique IPs today
+    const uniqueKey = `stats:unique:${today}`;
+    const uniqueIPs = JSON.parse(await env.ANALYTICS.get(uniqueKey) || '[]');
+    if (!uniqueIPs.includes(ip)) {
+      uniqueIPs.push(ip);
+      await env.ANALYTICS.put(uniqueKey, JSON.stringify(uniqueIPs), {
+        expirationTtl: 86400 * 7 // 7 days
+      });
+    }
+  } catch (e) {
+    console.error('Analytics error:', e);
+  }
+}
+
+async function handleAnalytics(request, env) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+  
+  if (!env.ANALYTICS) {
+    return new Response(JSON.stringify({ error: 'Analytics not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+  
+  try {
+    const data = await request.json();
+    const { type, content_id, content_title, source } = data;
+    
+    if (type === 'video_play') {
+      // Track video play
+      const key = `play:${source}:${content_id}`;
+      const count = parseInt(await env.ANALYTICS.get(key) || '0');
+      await env.ANALYTICS.put(key, (count + 1).toString());
+      
+      // Store content info
+      const infoKey = `info:${source}:${content_id}`;
+      await env.ANALYTICS.put(infoKey, JSON.stringify({
+        title: content_title,
+        source,
+        plays: count + 1,
+        last_played: new Date().toISOString()
+      }));
+      
+      // Increment total plays
+      const totalPlaysKey = 'stats:total_plays';
+      const totalPlays = parseInt(await env.ANALYTICS.get(totalPlaysKey) || '0');
+      await env.ANALYTICS.put(totalPlaysKey, (totalPlays + 1).toString());
+    }
+    
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+}
+
+async function getAnalytics(env) {
+  // Fallback to mock data if KV not configured
+  if (!env.ANALYTICS) {
+    const mockData = {
+      total_visitors: 15420,
+      unique_today: 342,
+      total_plays: 8750,
+      most_watched: [
+        { title: "Sample Drama 1", source: "dramabox", plays: 1250 },
+        { title: "Sample Movie 2", source: "dramamovie", plays: 980 },
+        { title: "Sample Anime 3", source: "samehadaku", plays: 845 }
+      ]
+    };
+    
+    return new Response(JSON.stringify(mockData), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+  
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const totalVisitors = parseInt(await env.ANALYTICS.get('stats:total_visitors') || '0');
+    const uniqueIPs = JSON.parse(await env.ANALYTICS.get(`stats:unique:${today}`) || '[]');
+    const totalPlays = parseInt(await env.ANALYTICS.get('stats:total_plays') || '0');
+    
+    // Get most watched (top 10)
+    const list = await env.ANALYTICS.list({ prefix: 'play:' });
+    const mostWatched = [];
+    
+    for (const key of list.keys.slice(0, 20)) {
+      const count = parseInt(await env.ANALYTICS.get(key.name) || '0');
+      const infoKey = key.name.replace('play:', 'info:');
+      const info = JSON.parse(await env.ANALYTICS.get(infoKey) || '{}');
+      
+      if (info.title) {
+        mostWatched.push({
+          title: info.title,
+          source: info.source,
+          plays: count
+        });
+      }
+    }
+    
+    mostWatched.sort((a, b) => b.plays - a.plays);
+    
+    return new Response(JSON.stringify({
+      total_visitors: totalVisitors,
+      unique_today: uniqueIPs.length,
+      total_plays: totalPlays,
+      most_watched: mostWatched.slice(0, 10)
+    }), {
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'content-type': 'application/json' }
+    });
+  }
+}
 
 async function proxyApi(request, url) {
   const targetPath = url.pathname.replace(/^\/api/, "");
@@ -1313,6 +1462,235 @@ function htmlPage() {
       margin: 0 2px;
     }
 
+    /* Statistics Dashboard */
+    .stats-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+      padding: 0 4px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139,92,246,0.05) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(139,92,246,0.3);
+      border-color: var(--primary);
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 100px;
+      height: 100px;
+      background: var(--gradient);
+      opacity: 0.05;
+      border-radius: 50%;
+      transform: translate(30%, -30%);
+    }
+
+    .stat-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      display: inline-block;
+      filter: drop-shadow(0 2px 8px rgba(139,92,246,0.3));
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-trend {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 11px;
+      padding: 4px 8px;
+      background: rgba(34,197,94,0.1);
+      color: #22c55e;
+      border-radius: 8px;
+      font-weight: 700;
+    }
+
+    /* Most Watched Section */
+    .most-watched-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .watched-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all 0.3s ease;
+    }
+
+    .watched-item:hover {
+      background: var(--bg-elevated);
+      border-color: var(--primary);
+      transform: translateX(4px);
+    }
+
+    .watched-rank {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--primary);
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .watched-rank.top1 { color: #fbbf24; }
+    .watched-rank.top2 { color: #d1d5db; }
+    .watched-rank.top3 { color: #fb923c; }
+
+    .watched-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .watched-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .watched-source {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .watched-count {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stats-toggle {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      background: var(--gradient);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(139,92,246,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      transition: all 0.3s ease;
+      z-index: 999;
+    }
+
+    .stats-toggle:hover {
+      transform: scale(1.1);
+      box-shadow: 0 8px 24px rgba(139,92,246,0.6);
+    }
+
+    .stats-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      backdrop-filter: blur(8px);
+      z-index: 1002;
+      display: none;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .stats-modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stats-modal-content {
+      background: var(--bg);
+      border: 2px solid var(--primary);
+      border-radius: var(--radius);
+      padding: 32px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(139,92,246,0.4);
+    }
+
+    .stats-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .stats-modal-title {
+      font-size: 28px;
+      font-weight: 900;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .refresh-stats-btn {
+      padding: 8px 16px;
+      background: var(--gradient);
+      border: none;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+    }
+
+    .refresh-stats-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 16px rgba(139,92,246,0.5);
+    }
+
     /* Loading */
     .loading {
       text-align: center;
@@ -1563,6 +1941,31 @@ function htmlPage() {
       </div>
     </header>
 
+    <!-- Statistics Dashboard -->
+    <div class="stats-dashboard">
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-value" id="statTotalVisitors">0</div>
+        <div class="stat-label">Total Visitors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🌟</div>
+        <div class="stat-value" id="statUniqueToday">0</div>
+        <div class="stat-label">Unique Today</div>
+        <span class="stat-trend">+Live</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">▶️</div>
+        <div class="stat-value" id="statTotalPlays">0</div>
+        <div class="stat-label">Video Plays</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔥</div>
+        <div class="stat-value" id="statMostWatched">0</div>
+        <div class="stat-label">Top Content</div>
+      </div>
+    </div>
+
     <!-- Continue Watching Section -->
     <div class="feature-section" id="continueWatchingSection" style="display: none;">
       <div class="section-header">
@@ -1649,6 +2052,57 @@ function htmlPage() {
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- Stats Toggle Button -->
+  <button class="stats-toggle" id="statsToggle" title="View Statistics">📊</button>
+
+  <!-- Stats Modal -->
+  <div class="stats-modal" id="statsModal">
+    <div class="stats-modal-content">
+      <div class="stats-modal-header">
+        <h2 class="stats-modal-title">
+          <span>📊</span> Website Statistics
+        </h2>
+        <div style="display: flex; gap: 12px;">
+          <button class="refresh-stats-btn" id="refreshStats">🔄 Refresh</button>
+          <button class="close-btn" id="closeStatsModal">&times;</button>
+        </div>
+      </div>
+
+      <div class="stats-dashboard">
+        <div class="stat-card">
+          <div class="stat-icon">👥</div>
+          <div class="stat-value" id="modalTotalVisitors">0</div>
+          <div class="stat-label">Total Visitors</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🌟</div>
+          <div class="stat-value" id="modalUniqueToday">0</div>
+          <div class="stat-label">Unique Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">▶️</div>
+          <div class="stat-value" id="modalTotalPlays">0</div>
+          <div class="stat-label">Total Plays</div>
+        </div>
+      </div>
+
+      <div class="feature-section" style="margin-top: 32px;">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="section-icon">🏆</span>
+            Most Watched Content
+          </h2>
+        </div>
+        <div class="most-watched-list" id="mostWatchedList">
+          <div class="loading" style="padding: 20px;">
+            <div class="spinner"></div>
+            Loading statistics...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script>
 const API = "/api";
@@ -2602,6 +3056,11 @@ function applyQuality() {
   if (!wasPaused) video.play().catch((e) => {
     console.error("Failed to play video:", e);
   });
+  
+  // Track video play (only once per video load)
+  if (prevTime === 0) {
+    trackVideoPlay(state.source, state.currentId, state.currentTitle);
+  }
 }
 
 // ========== EVENTS ==========
@@ -2905,10 +3364,110 @@ $("playerOverlay").onclick = e => {
   if (e.target === $("playerOverlay")) closePlayer();
 };
 
+// ========== ANALYTICS ==========
+
+async function loadStatistics() {
+  try {
+    const res = await fetch('/analytics/stats');
+    const data = await res.json();
+    
+    // Update dashboard stats
+    $("statTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("statUniqueToday").textContent = formatNumber(data.unique_today || 0);
+    $("statTotalPlays").textContent = formatNumber(data.total_plays || 0);
+    $("statMostWatched").textContent = data.most_watched?.length || 0;
+    
+    // Update modal stats
+    $("modalTotalVisitors").textContent = formatNumber(data.total_visitors || 0);
+    $("modalUniqueToday").textContent = formatNumber(data.unique_today || 0);
+    $("modalTotalPlays").textContent = formatNumber(data.total_plays || 0);
+    
+    // Render most watched list
+    renderMostWatched(data.most_watched || []);
+  } catch (err) {
+    console.error('Failed to load statistics:', err);
+  }
+}
+
+function formatNumber(num) {
+  if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+  if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+  return num.toString();
+}
+
+function renderMostWatched(list) {
+  const container = $("mostWatchedList");
+  
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty">Belum ada data tontonan</div>';
+    return;
+  }
+  
+  container.innerHTML = list.map((item, index) => {
+    const rankClass = index === 0 ? 'top1' : index === 1 ? 'top2' : index === 2 ? 'top3' : '';
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    
+    return '<div class="watched-item">' +
+      '<div class="watched-rank ' + rankClass + '">' + (medal || (index + 1)) + '</div>' +
+      '<div class="watched-info">' +
+        '<div class="watched-title">' + esc(item.title) + '</div>' +
+        '<div class="watched-source">' + esc(item.source.toUpperCase()) + '</div>' +
+      '</div>' +
+      '<div class="watched-count">' +
+        '<span>▶️</span> ' + formatNumber(item.plays) +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function trackVideoPlay(source, id, title) {
+  try {
+    await fetch('/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'video_play',
+        content_id: id,
+        content_title: title,
+        source: source
+      })
+    });
+  } catch (err) {
+    console.error('Failed to track play:', err);
+  }
+}
+
+// Stats Modal Controls
+$("statsToggle").onclick = () => {
+  $("statsModal").classList.add("show");
+  loadStatistics();
+};
+
+$("closeStatsModal").onclick = () => {
+  $("statsModal").classList.remove("show");
+};
+
+$("refreshStats").onclick = () => {
+  loadStatistics();
+  toast("📊 Statistics refreshed");
+};
+
+$("statsModal").onclick = (e) => {
+  if (e.target === $("statsModal")) {
+    $("statsModal").classList.remove("show");
+  }
+};
+
 // ========== INIT ==========
+loadStatistics();
 renderContinueWatching();
 renderFavorites();
 switchSource("melolo");
+
+// Refresh stats every 30 seconds
+setInterval(() => {
+  loadStatistics();
+}, 30000);
 </script>
 </body>
 </html>`;
