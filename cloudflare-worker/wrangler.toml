@@ -6,7 +6,7 @@ compatibility_date = "2024-01-01"
 # After creating KV namespace, uncomment and set the ID:
 # [[kv_namespaces]]
 # binding = "ANALYTICS"
-# id = "your-kv-namespace-id"
+# id = "527745873e3c44b7baa28c845ecf7ea0"
 
 # Uncomment and set if you want token protection
 # [vars]
