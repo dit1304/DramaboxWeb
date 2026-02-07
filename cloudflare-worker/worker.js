@@ -1122,7 +1122,7 @@ function htmlPage() {
     <h1 class="brand-title">ZEROSTORE</h1>
     <div class="brand-info">
       <div class="brand-info-item">Admin: <a href="https://t.me/kakatiri" target="_blank" rel="noopener">t.me/kakatiri</a></div>
-      <div class="brand-info-item">Thanks for API: <a href="https://t.me/yourealya" target="_blank" rel="noopener">t.me/@yourealya</a></div>
+      <div class="brand-info-item">Thanks for API: <a href="https://t.me/November2k" target="_blank" rel="noopener">t.me/November2k</a></div>
     </div>
   </div>
   <div class="container">
