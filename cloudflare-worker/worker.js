@@ -2285,7 +2285,12 @@ const SOURCES = {
     name: "DramaMovie",
     color: "#ec4899",
     navTabs: [
-      { id: "search", label: "Search" }
+      { id: "romance", label: "Romance", keyword: "love" },
+      { id: "action", label: "Action", keyword: "action" },
+      { id: "comedy", label: "Comedy", keyword: "comedy" },
+      { id: "2024", label: "2024", keyword: "2024" },
+      { id: "korea", label: "Korea", keyword: "korea" },
+      { id: "search", label: "🔍 Search" }
     ]
   },
   samehadaku: {
@@ -2535,15 +2540,17 @@ async function switchSource(source) {
 
   renderNavTabs();
 
-  const firstTab = SOURCES[source].navTabs[0].id;
-  if ((source === "samehadaku" || source === "dramamovie") && firstTab === "search") {
-    // For search-only sources, show empty state with search prompt
+  const firstTab = SOURCES[source].navTabs[0];
+  if (source === "samehadaku" && firstTab.id === "search") {
+    // For samehadaku, show empty state with search prompt
     state.mode = "search";
-    const searchPrompt = source === "samehadaku" ? "anime" : "drama/movie";
-    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari ' + searchPrompt + '...</div>';
+    $("grid").innerHTML = '<div class="empty">Gunakan kotak pencarian untuk mencari anime...</div>';
     setActiveNav("search");
+  } else if (source === "dramamovie" && firstTab.keyword) {
+    // For dramamovie, auto-load first keyword
+    loadList(firstTab.id, 1, firstTab.keyword);
   } else {
-    loadList(firstTab, 1);
+    loadList(firstTab.id, 1);
   }
 }
 
@@ -2552,11 +2559,19 @@ function renderNavTabs() {
   const tabs = SOURCES[state.source].navTabs;
 
   nav.innerHTML = tabs.map((tab, i) =>
-    "<button class=\\"nav-btn " + (i === 0 ? 'active' : '') + "\\" data-mode=\\"" + tab.id + "\\">" + tab.label + "</button>"
+    "<button class=\\"nav-btn " + (i === 0 ? 'active' : '') + "\\" data-mode=\\"" + tab.id + "\\" data-keyword=\\"" + (tab.keyword || '') + "\\">" + tab.label + "</button>"
   ).join("");
 
   nav.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.onclick = () => loadList(btn.dataset.mode, 1);
+    btn.onclick = () => {
+      const keyword = btn.dataset.keyword;
+      if (keyword) {
+        // Auto search with keyword
+        loadList(btn.dataset.mode, 1, keyword);
+      } else {
+        loadList(btn.dataset.mode, 1);
+      }
+    };
   });
 }
 
@@ -2716,8 +2731,10 @@ async function loadDramaboxList(mode, page, query) {
 }
 
 async function loadDramaMovieList(mode, page, query) {
-  if (mode === "search" && !query) {
+  // If no query, show prompt
+  if (!query) {
     state.list = [];
+    $("grid").innerHTML = '<div class="empty">Pilih kategori di atas atau gunakan kotak pencarian...</div>';
     return;
   }
 
