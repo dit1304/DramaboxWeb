@@ -8,15 +8,110 @@
 
 const API_BASE = "https://api.sonzaix.indevs.in";
 
+async function generateSessionToken(password, secret) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + ":" + secret);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function getSessionCookie(request) {
+  const cookie = request.headers.get("cookie") || "";
+  const match = cookie.match(/session=([^;]+)/);
+  return match ? match[1] : null;
+}
+
+function loginPage(error) {
+  return `<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login - StreamBox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0a0a0f; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-box { background: #1a1a26; border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 40px; width: 90%; max-width: 400px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+    .login-box h1 { text-align: center; font-size: 24px; margin-bottom: 8px; background: linear-gradient(135deg, #8b5cf6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .login-box p { text-align: center; color: #9ca3af; font-size: 14px; margin-bottom: 24px; }
+    .input-group { margin-bottom: 16px; }
+    .input-group label { display: block; font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+    .input-group input { width: 100%; padding: 12px 16px; background: #0a0a0f; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #fff; font-size: 15px; outline: none; transition: border-color 0.2s; }
+    .input-group input:focus { border-color: #8b5cf6; }
+    .login-btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border: none; border-radius: 12px; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: opacity 0.2s; }
+    .login-btn:hover { opacity: 0.9; }
+    .error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>StreamBox</h1>
+    <p>Masukkan password untuk mengakses</p>
+    ${error ? '<div class="error">' + error + '</div>' : ''}
+    <form method="POST" action="/login">
+      <div class="input-group">
+        <label>Password</label>
+        <input type="password" name="password" placeholder="Masukkan password..." autofocus required />
+      </div>
+      <button type="submit" class="login-btn">Masuk</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Optional token gate
-    if (env.PANEL_TOKEN) {
-      const token = url.searchParams.get("token") || "";
-      if (token !== env.PANEL_TOKEN) {
-        return new Response("Forbidden (missing/invalid token)", { status: 403 });
+    if (env.PANEL_PASSWORD) {
+      const validToken = await generateSessionToken(env.PANEL_PASSWORD, env.PANEL_PASSWORD);
+
+      if (url.pathname === "/login") {
+        if (request.method === "POST") {
+          const formData = await request.formData();
+          const password = formData.get("password") || "";
+          if (password === env.PANEL_PASSWORD) {
+            return new Response(null, {
+              status: 302,
+              headers: {
+                "Location": "/",
+                "Set-Cookie": "session=" + validToken + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+              },
+            });
+          }
+          return new Response(loginPage("Password salah!"), {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        return new Response(loginPage(), {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+
+      if (url.pathname === "/logout") {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            "Location": "/login",
+            "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
+          },
+        });
+      }
+
+      const sessionCookie = getSessionCookie(request);
+      if (sessionCookie !== validToken) {
+        if (url.pathname.startsWith("/api/") || url.pathname === "/stream") {
+          return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+        }
+        return new Response(null, {
+          status: 302,
+          headers: { "Location": "/login" },
+        });
       }
     }
 
@@ -41,7 +136,6 @@ export default {
 
     // Home page
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      // Track visitor
       ctx.waitUntil(trackVisitor(request, env));
       
       return new Response(htmlPage(), {
