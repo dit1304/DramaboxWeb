@@ -2991,6 +2991,13 @@ function renderEpisodes() {
 async function goToEpisode(idx) {
   if (idx < 0 || idx >= state.episodes.length) return;
   state.currentEpIndex = idx;
+  
+  // Reset video player state saat ganti episode
+  const video = $("videoPlayer");
+  video.pause();
+  video.currentTime = 0;
+  video.src = "";
+  
   renderEpisodes();
   await loadAndPlay();
 }
@@ -3032,7 +3039,7 @@ async function loadAndPlay() {
       }
 
       buildQualityDropdown();
-      applyQuality();
+      applyQuality(false); // Don't preserve time for new episode
       setStatus(ep.label + " siap");
     }
   } catch (err) {
@@ -3189,10 +3196,10 @@ function buildQualityDropdown() {
   const defIdx = state.qualities.findIndex(q => q.isDefault);
   sel.value = defIdx >= 0 ? String(defIdx) : "0";
 
-  sel.onchange = () => applyQuality();
+  sel.onchange = () => applyQuality(true); // Preserve time when changing quality
 }
 
-function applyQuality() {
+function applyQuality(preserveTime = false) {
   console.log("Applying quality. Available qualities:", state.qualities);
   const video = $("videoPlayer");
   const sel = $("qualitySelect");
@@ -3218,7 +3225,8 @@ function applyQuality() {
     return;
   }
 
-  const prevTime = video.currentTime || 0;
+  // Only preserve time if explicitly requested (quality change, not episode change)
+  const prevTime = preserveTime ? (video.currentTime || 0) : 0;
   const wasPaused = video.paused;
 
   console.log("Setting video src to:", url);
@@ -3226,10 +3234,15 @@ function applyQuality() {
   video.load();
   console.log("Video loaded. Ready to play.");
 
-  if (prevTime > 0) video.currentTime = prevTime;
-  if (!wasPaused) video.play().catch((e) => {
-    console.error("Failed to play video:", e);
-  });
+  if (prevTime > 0 && preserveTime) {
+    video.currentTime = prevTime;
+  }
+  
+  if (!wasPaused) {
+    video.play().catch((e) => {
+      console.error("Failed to play video:", e);
+    });
+  }
   
   // Track video play (only once per video load)
   if (prevTime === 0) {
