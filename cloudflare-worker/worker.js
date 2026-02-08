@@ -2924,14 +2924,13 @@ async function loadMeloloEpisodes(id) {
   }
 }
 
-async function loadDramaboxEpisodes(dramaId) {
-  const json = await jget("/dramabox/detail/" + encodeURIComponent(dramaId));
+async function loadDramaboxEpisodes(bookId) {
+  const json = await jget("/dramabox/detail/" + encodeURIComponent(bookId));
   const chapters = json?.chapterList || [];
 
   state.episodes = chapters.map(x => ({
     index: Number(x?.chapterIndex),
-    chapterId: x?.chapterId || "",
-    slug: x?.chapterId || "",
+    slug: String(x?.chapterIndex),
     label: "Ep " + (Number(x?.chapterIndex) + 1)
   })).sort((a, b) => a.index - b.index);
 
@@ -3155,12 +3154,12 @@ async function loadMeloloVideo(ep) {
 
 async function loadDramaboxVideo(ep) {
   console.log("Loading Dramabox episode:", ep);
-  console.log("Drama ID:", state.currentId);
-  console.log("Chapter ID:", ep.chapterId);
-  
+  console.log("Book ID:", state.currentId);
+  console.log("Chapter Index:", ep.index);
+
   const json = await jget(
-    "/dramabox/stream?dramaId=" + encodeURIComponent(state.currentId) +
-    "&chapterId=" + encodeURIComponent(ep.chapterId)
+    "/dramabox/stream?bookId=" + encodeURIComponent(state.currentId) +
+    "&index=" + ep.index
   );
 
   console.log("Stream response:", json);
@@ -3174,18 +3173,17 @@ async function loadDramaboxVideo(ep) {
   const newQualities = Array.isArray(data.qualities) ? data.qualities.map((q, i) => {
     const originalUrl = q.videoPath || q.videoUrl || "";
     console.log("Quality " + i + " (" + q.quality + "p):", originalUrl.substring(0, 100) + "...");
-    
+
     // Route through proxy to bypass CORS
     const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
     console.log("Proxy URL:", proxyUrl.substring(0, 100) + "...");
-    
+
     return {
       label: q.quality + "p",
       value: i,
       url: proxyUrl,
       originalUrl: originalUrl,
-      isDefault: q.isDefault === 1,
-      chapterId: ep.chapterId
+      isDefault: q.isDefault === 1
     };
   }) : [];
 
