@@ -3159,7 +3159,7 @@ async function loadDramaboxVideo(ep) {
 
   const json = await jget(
     "/dramabox/stream?dramaId=" + encodeURIComponent(state.currentId) +
-    "&index=" + ep.index
+    "&episode=" + ep.index
   );
 
   console.log("Stream response:", json);
