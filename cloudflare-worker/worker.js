@@ -2283,6 +2283,7 @@ const SOURCES = {
     name: "Dramabox",
     color: "#a855f7",
     navTabs: [
+      { id: "home", label: "Home" },
       { id: "populer", label: "Populer" },
       { id: "new", label: "Terbaru" }
     ]
@@ -2705,15 +2706,22 @@ async function loadMeloloList(mode, page, query) {
 
 async function loadDramaboxList(mode, page, query) {
   let path = "";
+  if (mode === "home") path = "/dramabox/home";
   if (mode === "populer") path = "/dramabox/populer?page=" + page;
   if (mode === "new") path = "/dramabox/new?page=" + page;
-  if (mode === "search") path = "/dramabox/search?q=" + encodeURIComponent(query) + "&page=" + page;
+  if (mode === "search") path = "/dramabox/search?q=" + encodeURIComponent(query) + "&page=" + page + "&result=20";
 
+  console.log("Loading Dramabox:", path);
   const json = await jget(path);
+  console.log("Dramabox response keys:", Object.keys(json));
   
   // Extract from nested structure
   let books = [];
-  if (json?.populer_data) {
+  if (json?.home_data) {
+    json.home_data.forEach(section => {
+      if (section.books) books.push(...section.books);
+    });
+  } else if (json?.populer_data) {
     json.populer_data.forEach(section => {
       if (section.books) books.push(...section.books);
     });
@@ -2721,19 +2729,26 @@ async function loadDramaboxList(mode, page, query) {
     json.new_data.forEach(section => {
       if (section.books) books.push(...section.books);
     });
-  } else if (json?.search_result) {
-    books = json.search_result;
+  } else if (json?.search_data) {
+    json.search_data.forEach(section => {
+      if (section.books) books.push(...section.books);
+    });
   }
+
+  console.log("Books extracted:", books.length);
 
   state.list = books.slice(0, 20).map(item => ({
     id: item.drama_id ?? "",
     title: item.drama_name || "Untitled",
     img: item.thumb_url || "",
     badge: (item.episode_count ?? 0) + " Eps",
+    hits: item.watch_value || "0",
     type: "dramabox"
   }));
 
   state.totalPages = mode === "search" ? 1 : 10;
+  
+  console.log("Final list count:", state.list.length);
 }
 
 async function loadDramaMovieList(mode, page, query) {
