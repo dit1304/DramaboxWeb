@@ -47,7 +47,7 @@ function loginPage(error) {
 </head>
 <body>
   <div class="login-box">
-    <h1>StreamBox</h1>
+    <h1>ZERO Panel StreamBox</h1>
     <p>Masukkan password untuk mengakses</p>
     ${error ? '<div class="error">' + error + '</div>' : ''}
     <form method="POST" action="/login">
