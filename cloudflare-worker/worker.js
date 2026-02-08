@@ -67,10 +67,16 @@ async function trackVisitor(request, env) {
     const today = now.toISOString().split('T')[0];
     const hour = now.toISOString().split('T')[1].split(':')[0]; // Current hour
     
-    // Increment total visitors (all time)
+    // Track total unique visitors by IP (all time)
     const totalKey = 'stats:total_visitors';
-    const total = parseInt(await env.ANALYTICS.get(totalKey) || '0');
-    await env.ANALYTICS.put(totalKey, (total + 1).toString());
+    const allIpsKey = 'stats:all_unique_ips';
+    const allIPs = JSON.parse(await env.ANALYTICS.get(allIpsKey) || '[]');
+    if (!allIPs.includes(ip)) {
+      allIPs.push(ip);
+      await env.ANALYTICS.put(allIpsKey, JSON.stringify(allIPs));
+      const total = parseInt(await env.ANALYTICS.get(totalKey) || '0');
+      await env.ANALYTICS.put(totalKey, (total + 1).toString());
+    }
     
     // Track visitors per day (for 30 days stats)
     const dailyKey = `stats:daily:${today}`;
