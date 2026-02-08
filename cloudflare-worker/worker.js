@@ -3139,12 +3139,12 @@ async function loadMeloloVideo(ep) {
     const originalUrl = q.url || "";
     const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
     
-    console.log(`MELOLO Quality ${i}:`, originalUrl.substring(0, 80));
+    console.log("MELOLO Quality " + i + ":", originalUrl.substring(0, 80));
     
     return {
       label: q.label || q.width + "p",
       value: i,
-      url: proxyUrl,  // Use proxy to bypass CORS
+      url: proxyUrl,
       originalUrl: originalUrl,
       isDefault: q.label === "720p" || i === json.qualities.length - 1
     };
@@ -3173,19 +3173,19 @@ async function loadDramaboxVideo(ep) {
   const data = json.data || {};
   const newQualities = Array.isArray(data.qualities) ? data.qualities.map((q, i) => {
     const originalUrl = q.videoPath || q.videoUrl || "";
-    console.log(`Quality ${i} (${q.quality}p):`, originalUrl.substring(0, 100) + "...");
+    console.log("Quality " + i + " (" + q.quality + "p):", originalUrl.substring(0, 100) + "...");
     
     // Route through proxy to bypass CORS
     const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
-    console.log(`Proxy URL:`, proxyUrl.substring(0, 100) + "...");
+    console.log("Proxy URL:", proxyUrl.substring(0, 100) + "...");
     
     return {
       label: q.quality + "p",
       value: i,
-      url: proxyUrl,  // Use proxy URL instead of direct
-      originalUrl: originalUrl,  // Keep original for reference
+      url: proxyUrl,
+      originalUrl: originalUrl,
       isDefault: q.isDefault === 1,
-      chapterId: ep.chapterId  // Store chapterId for reference
+      chapterId: ep.chapterId
     };
   }) : [];
 
@@ -3327,7 +3327,7 @@ function buildQualityDropdown() {
     opt.value = String(i);
     opt.textContent = q.label + (q.isDefault ? " ⭐" : "");
     sel.appendChild(opt);
-    console.log(`Added quality ${i}: ${q.label}`);
+    console.log("Added quality " + i + ": " + q.label);
   });
 
   // Select default or first quality
