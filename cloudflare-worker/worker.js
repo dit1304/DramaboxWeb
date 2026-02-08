@@ -312,6 +312,12 @@ async function proxyStream(request, url) {
     headers.set("Referer", "https://berkasdrive.com/");
   } else if (videoUrl.includes("dramaid") || videoUrl.includes("emturbovid") || videoUrl.includes("streamtape")) {
     headers.set("Referer", "https://dramaid.us/");
+  } else if (videoUrl.includes("dramaboxdb.com") || videoUrl.includes("dramabox")) {
+    headers.set("Referer", "https://www.dramaboxapp.com/");
+    headers.set("Origin", "https://www.dramaboxapp.com");
+  } else if (videoUrl.includes("d-cdn.me") || videoUrl.includes("drakor")) {
+    headers.set("Referer", "https://drakorid.club/");
+    headers.set("Origin", "https://drakorid.club");
   }
 
   if (request.headers.has("range")) {
@@ -3104,18 +3110,32 @@ async function loadAndPlay() {
 }
 
 async function loadMeloloVideo(ep) {
+  console.log("Loading MELOLO video, vid:", ep.vid);
+  
   const json = await jget("/melolo/stream/" + encodeURIComponent(ep.vid));
+
+  console.log("MELOLO stream response:", json);
 
   if (!json?.qualities || json.qualities.length === 0) {
     throw new Error("Video tidak tersedia");
   }
 
-  state.qualities = json.qualities.map((q, i) => ({
-    label: q.label || q.width + "p",
-    value: i,
-    url: q.url || "",
-    isDefault: q.label === "720p" || i === json.qualities.length - 1
-  }));
+  state.qualities = json.qualities.map((q, i) => {
+    const originalUrl = q.url || "";
+    const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
+    
+    console.log(`MELOLO Quality ${i}:`, originalUrl.substring(0, 80));
+    
+    return {
+      label: q.label || q.width + "p",
+      value: i,
+      url: proxyUrl,  // Use proxy to bypass CORS
+      originalUrl: originalUrl,
+      isDefault: q.label === "720p" || i === json.qualities.length - 1
+    };
+  });
+  
+  console.log("MELOLO qualities proxied:", state.qualities.length);
 }
 
 async function loadDramaboxVideo(ep) {
@@ -3137,13 +3157,18 @@ async function loadDramaboxVideo(ep) {
 
   const data = json.data || {};
   const newQualities = Array.isArray(data.qualities) ? data.qualities.map((q, i) => {
-    const url = q.videoPath || q.videoUrl || "";
-    console.log(`Quality ${i} (${q.quality}p):`, url.substring(0, 100) + "...");
+    const originalUrl = q.videoPath || q.videoUrl || "";
+    console.log(`Quality ${i} (${q.quality}p):`, originalUrl.substring(0, 100) + "...");
+    
+    // Route through proxy to bypass CORS
+    const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
+    console.log(`Proxy URL:`, proxyUrl.substring(0, 100) + "...");
     
     return {
       label: q.quality + "p",
       value: i,
-      url: url,
+      url: proxyUrl,  // Use proxy URL instead of direct
+      originalUrl: originalUrl,  // Keep original for reference
       isDefault: q.isDefault === 1,
       chapterId: ep.chapterId  // Store chapterId for reference
     };
@@ -3156,7 +3181,7 @@ async function loadDramaboxVideo(ep) {
   }
 
   // Validate at least one quality has valid URL
-  const hasValidUrl = newQualities.some(q => q.url && q.url.length > 10);
+  const hasValidUrl = newQualities.some(q => q.originalUrl && q.originalUrl.length > 10);
   if (!hasValidUrl) {
     console.error("No valid URLs in qualities:", newQualities);
     throw new Error("Video URL tidak valid");
@@ -3164,7 +3189,7 @@ async function loadDramaboxVideo(ep) {
 
   // Force update qualities
   state.qualities = newQualities;
-  console.log("State qualities updated:", state.qualities.length, "items");
+  console.log("State qualities updated with proxy URLs:", state.qualities.length, "items");
 }
 
 async function loadDramaMovieVideo(ep) {
@@ -3177,30 +3202,33 @@ async function loadDramaMovieVideo(ep) {
   const stream = json.data_stream[0];
   state.qualities = [];
 
-  // Add qualities in order: 720p, 480p, 360p
+  // Add qualities in order: 720p, 480p, 360p - Route through proxy
   if (stream["720p"]) {
+    const proxyUrl = "/stream?url=" + encodeURIComponent(stream["720p"]);
     state.qualities.push({
       label: "720p" + (stream["720p_size"] ? " (" + stream["720p_size"] + ")" : ""),
       value: state.qualities.length,
-      url: stream["720p"],
+      url: proxyUrl,
       isDefault: true
     });
   }
 
   if (stream["480p"]) {
+    const proxyUrl = "/stream?url=" + encodeURIComponent(stream["480p"]);
     state.qualities.push({
       label: "480p" + (stream["480p_size"] ? " (" + stream["480p_size"] + ")" : ""),
       value: state.qualities.length,
-      url: stream["480p"],
+      url: proxyUrl,
       isDefault: !stream["720p"]
     });
   }
 
   if (stream["360p"]) {
+    const proxyUrl = "/stream?url=" + encodeURIComponent(stream["360p"]);
     state.qualities.push({
       label: "360p" + (stream["360p_size"] ? " (" + stream["360p_size"] + ")" : ""),
       value: state.qualities.length,
-      url: stream["360p"],
+      url: proxyUrl,
       isDefault: !stream["720p"] && !stream["480p"]
     });
   }
@@ -3208,6 +3236,8 @@ async function loadDramaMovieVideo(ep) {
   if (state.qualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
   }
+  
+  console.log("DramaMovie qualities proxied:", state.qualities.length);
 }
 
 async function loadSamehadakuVideo(ep) {
