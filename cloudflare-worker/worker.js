@@ -3158,7 +3158,7 @@ async function loadDramaboxVideo(ep) {
   console.log("Chapter Index:", ep.index);
 
   const json = await jget(
-    "/dramabox/stream?bookId=" + encodeURIComponent(state.currentId) +
+    "/dramabox/stream?dramaId=" + encodeURIComponent(state.currentId) +
     "&index=" + ep.index
   );
 
