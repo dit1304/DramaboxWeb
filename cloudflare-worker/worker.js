@@ -255,6 +255,14 @@ async function getAnalytics(env) {
   }
 }
 
+function getCacheTtl(path) {
+  if (path.includes("/detail/") || path.includes("/info")) return 1800;
+  if (path.includes("/home") || path.includes("/populer") || path.includes("/new")) return 300;
+  if (path.includes("/search")) return 180;
+  if (path.includes("/stream")) return 600;
+  return 120;
+}
+
 async function proxyApi(request, url) {
   const targetPath = url.pathname.replace(/^\/api/, "");
   const targetUrl = new URL(API_BASE + targetPath);
@@ -263,6 +271,21 @@ async function proxyApi(request, url) {
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+
+  const cache = caches.default;
+  const cacheKey = new Request(targetUrl.toString(), { method: "GET" });
+  const ttl = getCacheTtl(targetPath);
+
+  if (request.method === "GET") {
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      const headers = new Headers(cached.headers);
+      const c = corsHeaders();
+      c.forEach((v, k) => headers.set(k, v));
+      headers.set("x-cache", "HIT");
+      return new Response(cached.body, { status: cached.status, headers });
+    }
   }
 
   const init = {
@@ -278,15 +301,24 @@ async function proxyApi(request, url) {
 
   const res = await fetch(targetUrl.toString(), {
     ...init,
-    cf: { cacheEverything: true, cacheTtl: 10 },
   });
+
+  const body = await res.arrayBuffer();
+
+  if (request.method === "GET" && res.ok) {
+    const cacheHeaders = new Headers(res.headers);
+    cacheHeaders.set("cache-control", "public, max-age=" + ttl);
+    const cacheRes = new Response(body, { status: res.status, headers: cacheHeaders });
+    await cache.put(cacheKey, cacheRes);
+  }
 
   const headers = new Headers(res.headers);
   const c = corsHeaders();
   c.forEach((v, k) => headers.set(k, v));
   headers.set("cache-control", "no-store");
+  headers.set("x-cache", "MISS");
 
-  return new Response(res.body, { status: res.status, headers });
+  return new Response(body, { status: res.status, headers });
 }
 
 async function proxyStream(request, url) {
