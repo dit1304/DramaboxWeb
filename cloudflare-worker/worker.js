@@ -2970,6 +2970,8 @@ function renderEpisodes() {
   const grid = $("episodesGrid");
   const current = state.currentEpIndex;
 
+  console.log("Rendering episodes, current index:", current);
+
   if (!state.episodes.length) {
     grid.innerHTML = '<div style="color: var(--text-muted)">Tidak ada episode.</div>';
     return;
@@ -2981,25 +2983,48 @@ function renderEpisodes() {
   }).join("");
 
   grid.querySelectorAll(".ep-btn").forEach(btn => {
-    btn.onclick = () => goToEpisode(Number(btn.dataset.idx));
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.idx);
+      console.log("Episode button clicked, index:", idx);
+      goToEpisode(idx);
+    };
   });
 
   const currentEp = state.episodes[current];
-  $("playerSubtitle").textContent = (currentEp?.label || "Episode " + (current + 1)) + " / " + state.episodes.length;
+  const subtitleText = (currentEp?.label || "Episode " + (current + 1)) + " / " + state.episodes.length;
+  $("playerSubtitle").textContent = subtitleText;
+  
+  console.log("Episode rendered:", subtitleText);
 }
 
 async function goToEpisode(idx) {
   if (idx < 0 || idx >= state.episodes.length) return;
+  
+  console.log("=== GO TO EPISODE ===");
+  console.log("From:", state.currentEpIndex, "To:", idx);
+  
+  // Cancel any auto-next countdown
+  cancelAutoNext();
+  
+  // Update episode index
   state.currentEpIndex = idx;
   
-  // Reset video player state saat ganti episode
+  // Completely reset video player
   const video = $("videoPlayer");
   video.pause();
+  video.removeAttribute('src');
+  video.load();
   video.currentTime = 0;
-  video.src = "";
+  
+  // Clear qualities to force reload
+  state.qualities = [];
+  
+  console.log("Video player cleared, loading new episode...");
   
   renderEpisodes();
   await loadAndPlay();
+  
+  console.log("=== GO TO EPISODE END ===");
 }
 
 function goRelative(step) {
@@ -3011,7 +3036,15 @@ function goRelative(step) {
 
 async function loadAndPlay() {
   const ep = state.episodes[state.currentEpIndex];
-  if (!ep) return;
+  if (!ep) {
+    console.error("No episode found at index:", state.currentEpIndex);
+    return;
+  }
+
+  console.log("=== LOAD AND PLAY START ===");
+  console.log("Current episode index:", state.currentEpIndex);
+  console.log("Episode data:", ep);
+  console.log("Source:", state.source);
 
   setStatus("Memuat " + ep.label + "...");
 
@@ -3030,6 +3063,11 @@ async function loadAndPlay() {
       $("videoControls").classList.remove("video-hidden");
       $("downloadSection").style.display = "none";
       
+      // Clear previous qualities
+      state.qualities = [];
+      console.log("Cleared old qualities");
+      
+      // Load new episode video
       if (state.source === "melolo") {
         await loadMeloloVideo(ep);
       } else if (state.source === "dramabox") {
@@ -3038,12 +3076,30 @@ async function loadAndPlay() {
         await loadDramaMovieVideo(ep);
       }
 
+      console.log("Video loaded, qualities count:", state.qualities.length);
+
+      if (state.qualities.length === 0) {
+        throw new Error("Tidak ada quality yang tersedia untuk episode ini");
+      }
+
+      // Wait a bit to ensure qualities are set
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log("Building quality dropdown...");
       buildQualityDropdown();
+      
+      console.log("Applying quality to video player...");
       applyQuality(false); // Don't preserve time for new episode
+      
       setStatus(ep.label + " siap");
+      toast("✅ " + ep.label + " loaded");
     }
+    
+    console.log("=== LOAD AND PLAY END ===");
   } catch (err) {
+    console.error("Load and play error:", err);
     setStatus("Error: " + err.message);
+    toast("❌ " + err.message);
   }
 }
 
@@ -3063,24 +3119,52 @@ async function loadMeloloVideo(ep) {
 }
 
 async function loadDramaboxVideo(ep) {
+  console.log("Loading Dramabox episode:", ep);
+  console.log("Drama ID:", state.currentId);
+  console.log("Chapter ID:", ep.chapterId);
+  
   const json = await jget(
     "/dramabox/stream?dramaId=" + encodeURIComponent(state.currentId) +
     "&chapterId=" + encodeURIComponent(ep.chapterId)
   );
 
-  if (!json?.success) throw new Error("API gagal");
+  console.log("Stream response:", json);
+
+  if (!json?.success) {
+    console.error("API failed:", json);
+    throw new Error("API gagal: " + (json?.message || "Unknown error"));
+  }
 
   const data = json.data || {};
-  state.qualities = Array.isArray(data.qualities) ? data.qualities.map((q, i) => ({
-    label: q.quality + "p",
-    value: i,
-    url: q.videoPath || q.videoUrl || "",
-    isDefault: q.isDefault === 1
-  })) : [];
+  const newQualities = Array.isArray(data.qualities) ? data.qualities.map((q, i) => {
+    const url = q.videoPath || q.videoUrl || "";
+    console.log(`Quality ${i} (${q.quality}p):`, url.substring(0, 100) + "...");
+    
+    return {
+      label: q.quality + "p",
+      value: i,
+      url: url,
+      isDefault: q.isDefault === 1,
+      chapterId: ep.chapterId  // Store chapterId for reference
+    };
+  }) : [];
 
-  if (state.qualities.length === 0) {
+  console.log("Qualities loaded:", newQualities.length);
+
+  if (newQualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
   }
+
+  // Validate at least one quality has valid URL
+  const hasValidUrl = newQualities.some(q => q.url && q.url.length > 10);
+  if (!hasValidUrl) {
+    console.error("No valid URLs in qualities:", newQualities);
+    throw new Error("Video URL tidak valid");
+  }
+
+  // Force update qualities
+  state.qualities = newQualities;
+  console.log("State qualities updated:", state.qualities.length, "items");
 }
 
 async function loadDramaMovieVideo(ep) {
@@ -3176,31 +3260,50 @@ function renderDownloadLinks() {
 }
 
 function buildQualityDropdown() {
+  console.log("Building quality dropdown, qualities:", state.qualities.length);
+  
   const sel = $("qualitySelect");
-  sel.innerHTML = '<option value="">Auto</option>';
+  
+  // Clear all options first
+  sel.innerHTML = '';
 
   if (!state.qualities.length) {
+    sel.innerHTML = '<option value="">No quality</option>';
     sel.disabled = true;
+    console.log("No qualities available");
     return;
   }
 
   sel.disabled = false;
 
+  // Add qualities
   state.qualities.forEach((q, i) => {
     const opt = document.createElement("option");
     opt.value = String(i);
-    opt.textContent = q.label + (q.isDefault ? " *" : "");
+    opt.textContent = q.label + (q.isDefault ? " ⭐" : "");
     sel.appendChild(opt);
+    console.log(`Added quality ${i}: ${q.label}`);
   });
 
+  // Select default or first quality
   const defIdx = state.qualities.findIndex(q => q.isDefault);
-  sel.value = defIdx >= 0 ? String(defIdx) : "0";
+  const selectedIdx = defIdx >= 0 ? defIdx : 0;
+  sel.value = String(selectedIdx);
+  
+  console.log("Selected quality index:", selectedIdx);
 
-  sel.onchange = () => applyQuality(true); // Preserve time when changing quality
+  // Remove old event listener and add new one
+  sel.onchange = () => {
+    console.log("Quality changed via dropdown");
+    applyQuality(true); // Preserve time when changing quality
+  };
 }
 
 function applyQuality(preserveTime = false) {
-  console.log("Applying quality. Available qualities:", state.qualities);
+  console.log("=== APPLY QUALITY START ===");
+  console.log("PreserveTime:", preserveTime);
+  console.log("Available qualities:", state.qualities);
+  
   const video = $("videoPlayer");
   const sel = $("qualitySelect");
   const idx = sel.value !== "" ? parseInt(sel.value, 10) : 0;
@@ -3208,6 +3311,7 @@ function applyQuality(preserveTime = false) {
 
   const pick = state.qualities[idx] || state.qualities[0];
   console.log("Picked quality:", pick);
+  
   if (!pick) {
     console.error("No quality available");
     setStatus("Link video kosong");
@@ -3215,12 +3319,16 @@ function applyQuality(preserveTime = false) {
   }
 
   let url = pick.url || "";
-  console.log("URL before processing:", url);
-  if (typeof url === "string" && url.startsWith("//")) url = "https:" + url;
-  console.log("URL after processing:", url);
+  console.log("Raw URL:", url);
+  
+  if (typeof url === "string" && url.startsWith("//")) {
+    url = "https:" + url;
+  }
+  
+  console.log("Final URL:", url);
 
-  if (!url) {
-    console.error("URL is empty");
+  if (!url || url === "https:") {
+    console.error("URL is empty or invalid");
     setStatus("Link video kosong");
     return;
   }
@@ -3229,46 +3337,77 @@ function applyQuality(preserveTime = false) {
   const prevTime = preserveTime ? (video.currentTime || 0) : 0;
   const wasPaused = video.paused;
 
+  console.log("Previous time:", prevTime);
+  console.log("Was paused:", wasPaused);
+
+  // Force clear and reload
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  
+  // Set new source
   console.log("Setting video src to:", url);
   video.src = url;
   video.load();
-  console.log("Video loaded. Ready to play.");
+  
+  console.log("Video src set to:", video.src);
+  console.log("Video readyState:", video.readyState);
 
-  if (prevTime > 0 && preserveTime) {
-    video.currentTime = prevTime;
-  }
+  // Wait for metadata before setting time
+  video.addEventListener('loadedmetadata', function onMetadata() {
+    console.log("Video metadata loaded, duration:", video.duration);
+    
+    if (prevTime > 0 && preserveTime && prevTime < video.duration) {
+      console.log("Restoring time to:", prevTime);
+      video.currentTime = prevTime;
+    }
+    
+    if (!wasPaused) {
+      video.play().catch((e) => {
+        console.error("Failed to play video:", e);
+      });
+    }
+    
+    video.removeEventListener('loadedmetadata', onMetadata);
+  }, { once: true });
   
-  if (!wasPaused) {
-    video.play().catch((e) => {
-      console.error("Failed to play video:", e);
-    });
-  }
-  
-  // Track video play (only once per video load)
-  if (prevTime === 0) {
+  // Track video play (only for new episodes)
+  if (!preserveTime) {
     trackVideoPlay(state.source, state.currentId, state.currentTitle);
   }
+  
+  console.log("=== APPLY QUALITY END ===");
 }
 
 // ========== EVENTS ==========
 
 const videoPlayer = $("videoPlayer");
 videoPlayer.addEventListener('error', (e) => {
-  console.error("Video error event:", e);
+  console.error("=== VIDEO ERROR ===");
+  console.error("Error event:", e);
+  console.error("Video src:", videoPlayer.src);
   console.error("Video error code:", videoPlayer.error?.code);
   console.error("Video error message:", videoPlayer.error?.message);
+  console.error("Current episode:", state.currentEpIndex);
+  console.error("Episode data:", state.episodes[state.currentEpIndex]);
+  console.error("Qualities available:", state.qualities.length);
+  
   let errorMsg = "Error loading video";
   if (videoPlayer.error) {
     switch(videoPlayer.error.code) {
       case 1: errorMsg = "Video loading aborted"; break;
-      case 2: errorMsg = "Network error"; break;
+      case 2: errorMsg = "Network error - Check URL"; break;
       case 3: errorMsg = "Video decoding failed"; break;
-      case 4: errorMsg = "Video format not supported"; break;
-      default: errorMsg = "Unknown video error";
+      case 4: errorMsg = "Video format not supported - URL mungkin invalid"; break;
+      default: errorMsg = "Unknown video error (code: " + videoPlayer.error.code + ")";
     }
   }
+  
+  console.error("Error message:", errorMsg);
   setStatus(errorMsg);
   toast(errorMsg);
+  
+  console.error("=== VIDEO ERROR END ===");
 });
 
 videoPlayer.addEventListener('loadstart', () => console.log("Video loadstart"));
