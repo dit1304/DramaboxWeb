@@ -2825,13 +2825,23 @@ async function loadMeloloList(mode, page, query) {
     books = json.search_result;
   }
 
-  state.list = books.slice(0, 20).map(item => ({
-    id: item.drama_id ?? "",
-    title: item.drama_name || "Untitled",
-    img: item.thumb_url || "",
-    badge: (item.episode_count ?? 0) + " Eps",
-    type: "melolo"
-  }));
+  state.list = books.slice(0, 20).map(item => {
+    let img = item.thumb_url || "";
+    if (img.includes(".heic")) {
+      const hashMatch = img.match(/novel-images-sg\/([^?]+)/);
+      if (hashMatch) {
+        const rawPath = hashMatch[1].replace(".heic", ".jpg");
+        img = "https://p16-novel-sg.ibyteimg.com/img/novel-images-sg/" + rawPath;
+      }
+    }
+    return {
+      id: item.drama_id ?? "",
+      title: item.drama_name || "Untitled",
+      img: img,
+      badge: (item.episode_count ?? 0) + " Eps",
+      type: "melolo"
+    };
+  });
 
   state.totalPages = mode === "search" ? 1 : 1;
 }
