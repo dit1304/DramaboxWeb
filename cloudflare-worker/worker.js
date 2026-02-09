@@ -2805,9 +2805,9 @@ async function loadList(mode, page = 1, query = "") {
 async function loadMeloloList(mode, page, query) {
   let path = "";
 
-  if (mode === "home") path = "/melolo/home";
-  if (mode === "populer") path = "/melolo/populer";
-  if (mode === "search") path = "/melolo/search?q=" + encodeURIComponent(query);
+  if (mode === "home") path = "/melolo/home?page=" + page;
+  if (mode === "populer") path = "/melolo/populer?page=" + page;
+  if (mode === "search") path = "/melolo/search?q=" + encodeURIComponent(query) + "&page=" + page;
 
   const json = await jget(path);
   
@@ -2838,7 +2838,7 @@ async function loadMeloloList(mode, page, query) {
 
 async function loadDramaboxList(mode, page, query) {
   let path = "";
-  if (mode === "home") path = "/dramabox/home";
+  if (mode === "home") path = "/dramabox/home?page=" + page;
   if (mode === "populer") path = "/dramabox/populer?page=" + page;
   if (mode === "new") path = "/dramabox/new?page=" + page;
   if (mode === "search") path = "/dramabox/search?q=" + encodeURIComponent(query) + "&page=" + page + "&result=20";
