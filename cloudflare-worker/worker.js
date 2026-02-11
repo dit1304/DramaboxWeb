@@ -2811,18 +2811,11 @@ async function loadMeloloList(mode, page, query) {
 
   const json = await jget(path);
   
-  // Extract from nested structure: home_data[].books[] or populer_data[].books[]
   let books = [];
-  if (json?.home_data) {
-    json.home_data.forEach(section => {
+  if (Array.isArray(json?.data)) {
+    json.data.forEach(section => {
       if (section.books) books.push(...section.books);
     });
-  } else if (json?.populer_data) {
-    json.populer_data.forEach(section => {
-      if (section.books) books.push(...section.books);
-    });
-  } else if (json?.search_result) {
-    books = json.search_result;
   }
 
   state.list = books.slice(0, 20).map(item => {
@@ -2857,22 +2850,9 @@ async function loadDramaboxList(mode, page, query) {
   const json = await jget(path);
   console.log("Dramabox response keys:", Object.keys(json));
   
-  // Extract from nested structure
   let books = [];
-  if (json?.home_data) {
-    json.home_data.forEach(section => {
-      if (section.books) books.push(...section.books);
-    });
-  } else if (json?.populer_data) {
-    json.populer_data.forEach(section => {
-      if (section.books) books.push(...section.books);
-    });
-  } else if (json?.new_data) {
-    json.new_data.forEach(section => {
-      if (section.books) books.push(...section.books);
-    });
-  } else if (json?.search_data) {
-    json.search_data.forEach(section => {
+  if (Array.isArray(json?.data)) {
+    json.data.forEach(section => {
       if (section.books) books.push(...section.books);
     });
   }
@@ -3051,7 +3031,7 @@ async function openContent(id, title, type, slug) {
 
 async function loadMeloloEpisodes(id) {
   const json = await jget("/melolo/detail/" + encodeURIComponent(id));
-  const videos = json?.video_list || [];
+  const videos = json?.data?.video_list || [];
 
   state.episodes = videos.map((v, idx) => ({
     index: idx,
@@ -3068,7 +3048,7 @@ async function loadMeloloEpisodes(id) {
 
 async function loadDramaboxEpisodes(bookId) {
   const json = await jget("/dramabox/detail/" + encodeURIComponent(bookId));
-  const chapters = json?.chapterList || [];
+  const chapters = json?.data?.chapterList || [];
 
   state.episodes = chapters.map(x => ({
     index: Number(x?.chapterIndex),
@@ -3272,11 +3252,12 @@ async function loadMeloloVideo(ep) {
 
   console.log("MELOLO stream response:", json);
 
-  if (!json?.qualities || json.qualities.length === 0) {
+  const qualities = json?.data?.qualities || [];
+  if (qualities.length === 0) {
     throw new Error("Video tidak tersedia");
   }
 
-  state.qualities = json.qualities.map((q, i) => {
+  state.qualities = qualities.map((q, i) => {
     const originalUrl = q.url || "";
     const proxyUrl = "/stream?url=" + encodeURIComponent(originalUrl);
     
@@ -3287,7 +3268,7 @@ async function loadMeloloVideo(ep) {
       value: i,
       url: proxyUrl,
       originalUrl: originalUrl,
-      isDefault: q.label === "720p" || i === json.qualities.length - 1
+      isDefault: q.label === "720p" || i === qualities.length - 1
     };
   });
   
@@ -3306,9 +3287,9 @@ async function loadDramaboxVideo(ep) {
 
   console.log("Stream response:", json);
 
-  if (!json?.success) {
+  if (json?.message !== "success") {
     console.error("API failed:", json);
-    throw new Error("API gagal: " + (json?.message || "Unknown error"));
+    throw new Error("API gagal: " + (json?.error || json?.message || "Unknown error"));
   }
 
   const data = json.data || {};
