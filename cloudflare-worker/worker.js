@@ -2821,7 +2821,7 @@ async function loadMeloloList(mode, page, query) {
   state.list = books.slice(0, 20).map(item => {
     let img = item.thumb_url || "";
     if (img.includes(".heic")) {
-      const hashMatch = img.match(/novel-images-sg\/([^?]+)/);
+      const hashMatch = img.match(/novel-images-sg\\/([^?]+)/);
       if (hashMatch) {
         const rawPath = hashMatch[1].replace(".heic", ".jpg");
         img = "https://p16-novel-sg.ibyteimg.com/img/novel-images-sg/" + rawPath;
