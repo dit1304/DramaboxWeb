@@ -485,10 +485,44 @@ async function proxyStream(request, url) {
       responseHeaders.set("content-type", response.headers.get("content-type"));
     }
 
-    if (videoUrl.endsWith(".m3u8") || videoUrl.includes(".m3u8?")) {
+    const isM3u8 = videoUrl.endsWith(".m3u8") || videoUrl.includes(".m3u8?") || videoUrl.includes(".m3u8#");
+    const isTs = videoUrl.endsWith(".ts") || videoUrl.includes(".ts?");
+
+    if (isM3u8) {
       responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
-    } else if (videoUrl.endsWith(".ts") || videoUrl.includes(".ts?")) {
+    } else if (isTs) {
       responseHeaders.set("content-type", "video/mp2t");
+    }
+
+    if (isM3u8) {
+      let body = await response.text();
+      const baseUrl = videoUrl.substring(0, videoUrl.lastIndexOf("/") + 1);
+      const lines = body.split("\n");
+      const rewritten = lines.map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        if (trimmed.startsWith("#EXT-X-MAP:URI=")) {
+          const match = trimmed.match(/URI="([^"]+)"/);
+          if (match) {
+            let mapUrl = match[1];
+            if (!mapUrl.startsWith("http")) mapUrl = baseUrl + mapUrl;
+            return '#EXT-X-MAP:URI="/stream?url=' + encodeURIComponent(mapUrl) + '"';
+          }
+          return line;
+        }
+        if (trimmed.startsWith("#")) return line;
+        let segUrl = trimmed;
+        if (!segUrl.startsWith("http")) {
+          segUrl = baseUrl + segUrl;
+        }
+        return "/stream?url=" + encodeURIComponent(segUrl);
+      });
+      const newBody = rewritten.join("\n");
+      responseHeaders.delete("content-length");
+      return new Response(newBody, {
+        status: 200,
+        headers: responseHeaders
+      });
     }
 
     return new Response(response.body, {
