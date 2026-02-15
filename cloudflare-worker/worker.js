@@ -450,6 +450,9 @@ async function proxyStream(request, url) {
   } else if (videoUrl.includes("d-cdn.me") || videoUrl.includes("drakor")) {
     headers.set("Referer", "https://drakorid.club/");
     headers.set("Origin", "https://drakorid.club");
+  } else if (videoUrl.includes("reelshort") || videoUrl.includes("rfrsh.me") || videoUrl.includes("cloudfront.net")) {
+    headers.set("Referer", "https://reelshort.com/");
+    headers.set("Origin", "https://reelshort.com");
   }
 
   if (request.headers.has("range")) {
@@ -482,6 +485,12 @@ async function proxyStream(request, url) {
       responseHeaders.set("content-type", response.headers.get("content-type"));
     }
 
+    if (videoUrl.endsWith(".m3u8") || videoUrl.includes(".m3u8?")) {
+      responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
+    } else if (videoUrl.endsWith(".ts") || videoUrl.includes(".ts?")) {
+      responseHeaders.set("content-type", "video/mp2t");
+    }
+
     return new Response(response.body, {
       status: response.status,
       headers: responseHeaders
@@ -510,6 +519,7 @@ function htmlPage() {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"><\/script>
   <style>
     :root {
       --bg: #0a0a0f;
@@ -2138,6 +2148,9 @@ function htmlPage() {
         <button class="source-tab" data-source="dramabox">
           <span class="source-icon">🎬</span> Dramabox
         </button>
+        <button class="source-tab" data-source="reelshort">
+          <span class="source-icon">🎞️</span> ReelShort
+        </button>
         <button class="source-tab" data-source="dramamovie">
           <span class="source-icon">🎭</span> DramaMovie
         </button>
@@ -2414,6 +2427,15 @@ const SOURCES = {
   dramabox: {
     name: "Dramabox",
     color: "#a855f7",
+    navTabs: [
+      { id: "home", label: "Home" },
+      { id: "populer", label: "Populer" },
+      { id: "new", label: "Terbaru" }
+    ]
+  },
+  reelshort: {
+    name: "ReelShort",
+    color: "#f59e0b",
     navTabs: [
       { id: "home", label: "Home" },
       { id: "populer", label: "Populer" },
@@ -2789,6 +2811,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadMeloloList(mode, page, query);
     } else if (state.source === "dramabox") {
       await loadDramaboxList(mode, page, query);
+    } else if (state.source === "reelshort") {
+      await loadReelshortList(mode, page, query);
     } else if (state.source === "dramamovie") {
       await loadDramaMovieList(mode, page, query);
     } else if (state.source === "samehadaku") {
@@ -2873,6 +2897,34 @@ async function loadDramaboxList(mode, page, query) {
   console.log("Final list count:", state.list.length);
 }
 
+async function loadReelshortList(mode, page, query) {
+  let path = "";
+  if (mode === "home") path = "/reelshort/home?page=" + page;
+  if (mode === "populer") path = "/reelshort/populer?page=" + page;
+  if (mode === "new") path = "/reelshort/new?page=" + page;
+  if (mode === "search") path = "/reelshort/search?q=" + encodeURIComponent(query) + "&page=" + page;
+
+  const json = await jget(path);
+
+  let books = [];
+  if (Array.isArray(json?.data)) {
+    json.data.forEach(section => {
+      if (section.books) books.push(...section.books);
+    });
+  }
+
+  state.list = books.slice(0, 20).map(item => ({
+    id: item.drama_id ?? "",
+    title: item.drama_name || "Untitled",
+    img: item.thumb_url || "",
+    badge: (item.episode_count ?? 0) + " Eps",
+    hits: item.watch_value || "0",
+    type: "reelshort"
+  }));
+
+  state.totalPages = mode === "search" ? 1 : 10;
+}
+
 async function loadDramaMovieList(mode, page, query) {
   // If no query, show prompt
   if (!query) {
@@ -2936,6 +2988,7 @@ function renderList() {
     let badgeClass = '';
     if (item.type === 'melolo') badgeClass = 'red';
     else if (item.type === 'dramabox') badgeClass = 'badge';
+    else if (item.type === 'reelshort') badgeClass = 'badge';
     else if (item.type === 'dramamovie') badgeClass = 'badge';
     else if (item.type === 'samehadaku') badgeClass = 'cyan';
     
@@ -3009,6 +3062,8 @@ async function openContent(id, title, type, slug) {
       await loadMeloloEpisodes(id);
     } else if (type === "dramabox") {
       await loadDramaboxEpisodes(id);
+    } else if (type === "reelshort") {
+      await loadReelshortEpisodes(id);
     } else if (type === "dramamovie") {
       await loadDramaMovieEpisodes(id);
     } else if (type === "samehadaku") {
@@ -3055,6 +3110,22 @@ async function loadDramaboxEpisodes(bookId) {
     slug: String(x?.chapterIndex),
     label: "Ep " + (Number(x?.chapterIndex) + 1)
   })).sort((a, b) => a.index - b.index);
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
+async function loadReelshortEpisodes(id) {
+  const json = await jget("/reelshort/detail?id=" + encodeURIComponent(id));
+  const videos = json?.data?.video_list || [];
+
+  state.episodes = videos.map((v, idx) => ({
+    index: idx,
+    chapterId: v.chapterId || "",
+    label: "Ep " + v.index,
+    isLocked: v.isLocked || false
+  }));
 
   if (state.episodes.length) {
     state.currentEpIndex = 0;
@@ -3214,6 +3285,8 @@ async function loadAndPlay() {
         await loadMeloloVideo(ep);
       } else if (state.source === "dramabox") {
         await loadDramaboxVideo(ep);
+      } else if (state.source === "reelshort") {
+        await loadReelshortVideo(ep);
       } else if (state.source === "dramamovie") {
         await loadDramaMovieVideo(ep);
       }
@@ -3326,6 +3399,62 @@ async function loadDramaboxVideo(ep) {
   // Force update qualities
   state.qualities = newQualities;
   console.log("State qualities updated with proxy URLs:", state.qualities.length, "items");
+}
+
+async function loadReelshortVideo(ep) {
+  console.log("Loading ReelShort video, chapterId:", ep.chapterId);
+
+  const json = await jget(
+    "/reelshort/stream?id=" + encodeURIComponent(state.currentId) +
+    "&chapterId=" + encodeURIComponent(ep.chapterId)
+  );
+
+  console.log("ReelShort stream response:", json);
+
+  if (json?.message !== "success") {
+    throw new Error("API gagal: " + (json?.error || json?.message || "Unknown error"));
+  }
+
+  const data = json.data || {};
+  const videoList = Array.isArray(data.videoList) ? data.videoList : [];
+
+  if (videoList.length === 0 && !data.playlist_url) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  var hlsQualities = [];
+  if (data.playlist_url) {
+    var proxyUrl = "/stream?url=" + encodeURIComponent(data.playlist_url);
+    hlsQualities.push({
+      label: "720p",
+      value: 0,
+      url: proxyUrl,
+      originalUrl: data.playlist_url,
+      isDefault: true,
+      isHLS: true
+    });
+  }
+
+  videoList.forEach(function(v, i) {
+    if (v.playUrl && v.dpi > 0) {
+      var pUrl = "/stream?url=" + encodeURIComponent(v.playUrl);
+      hlsQualities.push({
+        label: v.dpi + "p",
+        value: hlsQualities.length,
+        url: pUrl,
+        originalUrl: v.playUrl,
+        isDefault: v.dpi === 720,
+        isHLS: true
+      });
+    }
+  });
+
+  if (hlsQualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
+
+  state.qualities = hlsQualities;
+  console.log("ReelShort qualities loaded:", state.qualities.length);
 }
 
 async function loadDramaMovieVideo(ep) {
@@ -3508,34 +3637,70 @@ function applyQuality(preserveTime = false) {
 
   // Force clear and reload
   video.pause();
+  if (window._hls) {
+    window._hls.destroy();
+    window._hls = null;
+  }
   video.removeAttribute('src');
   video.load();
   
-  // Set new source
+  // Set new source - HLS or direct
   console.log("Setting video src to:", url);
-  video.src = url;
-  video.load();
   
-  console.log("Video src set to:", video.src);
-  console.log("Video readyState:", video.readyState);
+  if (pick.isHLS && typeof Hls !== "undefined" && Hls.isSupported()) {
+    console.log("Using HLS.js for stream");
+    var hls = new Hls({ enableWorker: false });
+    window._hls = hls;
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+      console.log("HLS manifest parsed");
+      if (prevTime > 0 && preserveTime) {
+        video.currentTime = prevTime;
+      }
+      if (!wasPaused) {
+        video.play().catch(function(e) { console.error("HLS play failed:", e); });
+      }
+    });
+    hls.on(Hls.Events.ERROR, function(event, data) {
+      console.error("HLS error:", data.type, data.details);
+      if (data.fatal) {
+        setStatus("HLS error: " + data.details);
+      }
+    });
+  } else if (pick.isHLS && video.canPlayType("application/vnd.apple.mpegurl")) {
+    console.log("Using native HLS support");
+    video.src = url;
+    video.addEventListener('loadedmetadata', function onMeta() {
+      if (prevTime > 0 && preserveTime && prevTime < video.duration) video.currentTime = prevTime;
+      if (!wasPaused) video.play().catch(function(e) { console.error("Play failed:", e); });
+      video.removeEventListener('loadedmetadata', onMeta);
+    }, { once: true });
+  } else {
+    video.src = url;
+    video.load();
+    
+    console.log("Video src set to:", video.src);
+    console.log("Video readyState:", video.readyState);
 
-  // Wait for metadata before setting time
-  video.addEventListener('loadedmetadata', function onMetadata() {
-    console.log("Video metadata loaded, duration:", video.duration);
-    
-    if (prevTime > 0 && preserveTime && prevTime < video.duration) {
-      console.log("Restoring time to:", prevTime);
-      video.currentTime = prevTime;
-    }
-    
-    if (!wasPaused) {
-      video.play().catch((e) => {
-        console.error("Failed to play video:", e);
-      });
-    }
-    
-    video.removeEventListener('loadedmetadata', onMetadata);
-  }, { once: true });
+    // Wait for metadata before setting time
+    video.addEventListener('loadedmetadata', function onMetadata() {
+      console.log("Video metadata loaded, duration:", video.duration);
+      
+      if (prevTime > 0 && preserveTime && prevTime < video.duration) {
+        console.log("Restoring time to:", prevTime);
+        video.currentTime = prevTime;
+      }
+      
+      if (!wasPaused) {
+        video.play().catch((e) => {
+          console.error("Failed to play video:", e);
+        });
+      }
+      
+      video.removeEventListener('loadedmetadata', onMetadata);
+    }, { once: true });
+  }
   
   // Track video play (only for new episodes)
   if (!preserveTime) {
