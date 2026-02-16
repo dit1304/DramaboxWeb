@@ -453,6 +453,9 @@ async function proxyStream(request, url) {
   } else if (videoUrl.includes("reelshort") || videoUrl.includes("rfrsh.me") || videoUrl.includes("cloudfront.net")) {
     headers.set("Referer", "https://reelshort.com/");
     headers.set("Origin", "https://reelshort.com");
+  } else if (videoUrl.includes("mydramawave.com") || videoUrl.includes("freereels")) {
+    headers.set("Referer", "https://www.mydramawave.com/");
+    headers.set("Origin", "https://www.mydramawave.com");
   }
 
   if (request.headers.has("range")) {
@@ -488,10 +491,14 @@ async function proxyStream(request, url) {
     const isM3u8 = videoUrl.endsWith(".m3u8") || videoUrl.includes(".m3u8?") || videoUrl.includes(".m3u8#");
     const isTs = videoUrl.endsWith(".ts") || videoUrl.includes(".ts?");
 
+    const isSrt = videoUrl.endsWith(".srt") || videoUrl.includes(".srt?");
+
     if (isM3u8) {
       responseHeaders.set("content-type", "application/vnd.apple.mpegurl");
     } else if (isTs) {
       responseHeaders.set("content-type", "video/mp2t");
+    } else if (isSrt) {
+      responseHeaders.set("content-type", "text/plain; charset=utf-8");
     }
 
     if (isM3u8) {
@@ -3219,6 +3226,7 @@ async function loadFreereelsEpisodes(id) {
 
   state.episodes = episodes.map((ep, idx) => ({
     index: idx,
+    episodeNum: ep.episode,
     episodeId: ep.episode_id || "",
     label: "Ep " + ep.episode,
     name: ep.name || ""
@@ -3557,11 +3565,11 @@ async function loadReelshortVideo(ep) {
 }
 
 async function loadFreereelsVideo(ep) {
-  console.log("Loading FreeReels video, episodeId:", ep.episodeId);
+  console.log("Loading FreeReels video, episodeNum:", ep.episodeNum);
 
   const json = await jget(
-    "/freereels/stream?id=" + encodeURIComponent(state.currentId) +
-    "&episode=" + encodeURIComponent(ep.episodeId)
+    "/freereels/stream?dramaId=" + encodeURIComponent(state.currentId) +
+    "&episode=" + ep.episodeNum
   );
 
   console.log("FreeReels stream response:", json);
@@ -3571,59 +3579,54 @@ async function loadFreereelsVideo(ep) {
   }
 
   const data = json.data || {};
-  const videoList = Array.isArray(data.videoList) ? data.videoList : [];
 
-  if (videoList.length === 0 && !data.playlist_url && !data.video_url) {
+  if (!data.video_url && !data.h264_m3u8 && !data.m3u8_url) {
     throw new Error("Video tidak tersedia");
   }
 
   var hlsQualities = [];
 
-  if (data.video_url) {
-    var isHls = data.video_url.includes(".m3u8");
-    var proxyUrl = "/stream?url=" + encodeURIComponent(data.video_url);
+  if (data.h264_m3u8) {
     hlsQualities.push({
-      label: "Auto",
+      label: "H264",
       value: 0,
-      url: proxyUrl,
-      originalUrl: data.video_url,
+      url: "/stream?url=" + encodeURIComponent(data.h264_m3u8),
+      originalUrl: data.h264_m3u8,
       isDefault: true,
-      isHLS: isHls
-    });
-  }
-
-  if (data.playlist_url) {
-    var pUrl = "/stream?url=" + encodeURIComponent(data.playlist_url);
-    hlsQualities.push({
-      label: "720p",
-      value: hlsQualities.length,
-      url: pUrl,
-      originalUrl: data.playlist_url,
-      isDefault: hlsQualities.length === 0,
       isHLS: true
     });
   }
 
-  videoList.forEach(function(v, i) {
-    if (v.playUrl && v.dpi > 0) {
-      var vUrl = "/stream?url=" + encodeURIComponent(v.playUrl);
-      hlsQualities.push({
-        label: v.dpi + "p",
-        value: hlsQualities.length,
-        url: vUrl,
-        originalUrl: v.playUrl,
-        isDefault: v.dpi === 720 && hlsQualities.length === 0,
-        isHLS: true
-      });
-    }
-  });
+  if (data.h265_m3u8 && data.h265_m3u8 !== data.h264_m3u8) {
+    hlsQualities.push({
+      label: "H265",
+      value: hlsQualities.length,
+      url: "/stream?url=" + encodeURIComponent(data.h265_m3u8),
+      originalUrl: data.h265_m3u8,
+      isDefault: false,
+      isHLS: true
+    });
+  }
+
+  if (hlsQualities.length === 0 && data.video_url) {
+    hlsQualities.push({
+      label: "Auto",
+      value: 0,
+      url: "/stream?url=" + encodeURIComponent(data.video_url),
+      originalUrl: data.video_url,
+      isDefault: true,
+      isHLS: data.video_url.includes(".m3u8")
+    });
+  }
 
   if (hlsQualities.length === 0) {
     throw new Error("Tidak ada stream video yang tersedia");
   }
 
   state.qualities = hlsQualities;
+  state.freereelsSubtitles = data.subtitles || [];
   console.log("FreeReels qualities loaded:", state.qualities.length);
+  console.log("FreeReels subtitles:", state.freereelsSubtitles.length);
 }
 
 async function loadDramaMovieVideo(ep) {
@@ -3871,6 +3874,25 @@ function applyQuality(preserveTime = false) {
     }, { once: true });
   }
   
+  // Load subtitles for FreeReels
+  var oldTracks = video.querySelectorAll("track");
+  oldTracks.forEach(function(t) { t.remove(); });
+
+  if (state.source === "freereels" && state.freereelsSubtitles && state.freereelsSubtitles.length > 0) {
+    state.freereelsSubtitles.forEach(function(sub, i) {
+      var track = document.createElement("track");
+      track.kind = "subtitles";
+      track.label = sub.display_name || sub.language;
+      track.srclang = sub.language ? sub.language.split("-")[0] : "id";
+      track.src = "/stream?url=" + encodeURIComponent(sub.url);
+      if (sub.language === "id-ID" || sub.type === "original") {
+        track.default = true;
+      }
+      video.appendChild(track);
+    });
+    console.log("Subtitles loaded:", state.freereelsSubtitles.length);
+  }
+
   // Track video play (only for new episodes)
   if (!preserveTime) {
     trackVideoPlay(state.source, state.currentId, state.currentTitle);
