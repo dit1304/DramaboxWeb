@@ -3215,13 +3215,13 @@ async function loadReelshortEpisodes(id) {
 
 async function loadFreereelsEpisodes(id) {
   const json = await jget("/freereels/detail?id=" + encodeURIComponent(id));
-  const videos = json?.data?.video_list || [];
+  const episodes = json?.data?.episode_list || [];
 
-  state.episodes = videos.map((v, idx) => ({
+  state.episodes = episodes.map((ep, idx) => ({
     index: idx,
-    chapterId: v.chapterId || "",
-    label: "Ep " + v.index,
-    isLocked: v.isLocked || false
+    episodeId: ep.episode_id || "",
+    label: "Ep " + ep.episode,
+    name: ep.name || ""
   }));
 
   if (state.episodes.length) {
@@ -3557,11 +3557,11 @@ async function loadReelshortVideo(ep) {
 }
 
 async function loadFreereelsVideo(ep) {
-  console.log("Loading FreeReels video, chapterId:", ep.chapterId);
+  console.log("Loading FreeReels video, episodeId:", ep.episodeId);
 
   const json = await jget(
     "/freereels/stream?id=" + encodeURIComponent(state.currentId) +
-    "&chapterId=" + encodeURIComponent(ep.chapterId)
+    "&episode=" + encodeURIComponent(ep.episodeId)
   );
 
   console.log("FreeReels stream response:", json);
@@ -3573,32 +3573,46 @@ async function loadFreereelsVideo(ep) {
   const data = json.data || {};
   const videoList = Array.isArray(data.videoList) ? data.videoList : [];
 
-  if (videoList.length === 0 && !data.playlist_url) {
+  if (videoList.length === 0 && !data.playlist_url && !data.video_url) {
     throw new Error("Video tidak tersedia");
   }
 
   var hlsQualities = [];
-  if (data.playlist_url) {
-    var proxyUrl = "/stream?url=" + encodeURIComponent(data.playlist_url);
+
+  if (data.video_url) {
+    var isHls = data.video_url.includes(".m3u8");
+    var proxyUrl = "/stream?url=" + encodeURIComponent(data.video_url);
     hlsQualities.push({
-      label: "720p",
+      label: "Auto",
       value: 0,
       url: proxyUrl,
-      originalUrl: data.playlist_url,
+      originalUrl: data.video_url,
       isDefault: true,
+      isHLS: isHls
+    });
+  }
+
+  if (data.playlist_url) {
+    var pUrl = "/stream?url=" + encodeURIComponent(data.playlist_url);
+    hlsQualities.push({
+      label: "720p",
+      value: hlsQualities.length,
+      url: pUrl,
+      originalUrl: data.playlist_url,
+      isDefault: hlsQualities.length === 0,
       isHLS: true
     });
   }
 
   videoList.forEach(function(v, i) {
     if (v.playUrl && v.dpi > 0) {
-      var pUrl = "/stream?url=" + encodeURIComponent(v.playUrl);
+      var vUrl = "/stream?url=" + encodeURIComponent(v.playUrl);
       hlsQualities.push({
         label: v.dpi + "p",
         value: hlsQualities.length,
-        url: pUrl,
+        url: vUrl,
         originalUrl: v.playUrl,
-        isDefault: v.dpi === 720,
+        isDefault: v.dpi === 720 && hlsQualities.length === 0,
         isHLS: true
       });
     }
