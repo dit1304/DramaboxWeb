@@ -2185,6 +2185,9 @@ function htmlPage() {
         <button class="source-tab" data-source="reelshort">
           <span class="source-icon">🎞️</span> ReelShort
         </button>
+        <button class="source-tab" data-source="freereels">
+          <span class="source-icon">🎥</span> FreeReels
+        </button>
         <button class="source-tab" data-source="dramamovie">
           <span class="source-icon">🎭</span> DramaMovie
         </button>
@@ -2474,6 +2477,16 @@ const SOURCES = {
       { id: "home", label: "Home" },
       { id: "populer", label: "Populer" },
       { id: "new", label: "Terbaru" }
+    ]
+  },
+  freereels: {
+    name: "FreeReels",
+    color: "#ef4444",
+    navTabs: [
+      { id: "home", label: "Home" },
+      { id: "populer", label: "Populer" },
+      { id: "new", label: "Terbaru" },
+      { id: "dubbing", label: "Dubbing" }
     ]
   },
   dramamovie: {
@@ -2847,6 +2860,8 @@ async function loadList(mode, page = 1, query = "") {
       await loadDramaboxList(mode, page, query);
     } else if (state.source === "reelshort") {
       await loadReelshortList(mode, page, query);
+    } else if (state.source === "freereels") {
+      await loadFreereelsList(mode, page, query);
     } else if (state.source === "dramamovie") {
       await loadDramaMovieList(mode, page, query);
     } else if (state.source === "samehadaku") {
@@ -2959,6 +2974,35 @@ async function loadReelshortList(mode, page, query) {
   state.totalPages = mode === "search" ? 1 : 10;
 }
 
+async function loadFreereelsList(mode, page, query) {
+  let path = "";
+  if (mode === "home") path = "/freereels/home?page=" + page;
+  if (mode === "populer") path = "/freereels/populer?page=" + page;
+  if (mode === "new") path = "/freereels/new?page=" + page;
+  if (mode === "dubbing") path = "/freereels/dubbing?page=" + page;
+  if (mode === "search") path = "/freereels/search?q=" + encodeURIComponent(query) + "&page=" + page;
+
+  const json = await jget(path);
+
+  let books = [];
+  if (Array.isArray(json?.data)) {
+    json.data.forEach(section => {
+      if (section.books) books.push(...section.books);
+    });
+  }
+
+  state.list = books.slice(0, 20).map(item => ({
+    id: item.drama_id ?? "",
+    title: item.drama_name || "Untitled",
+    img: item.thumb_url || "",
+    badge: (item.episode_count ?? 0) + " Eps",
+    hits: item.watch_value || "0",
+    type: "freereels"
+  }));
+
+  state.totalPages = mode === "search" ? 1 : 10;
+}
+
 async function loadDramaMovieList(mode, page, query) {
   // If no query, show prompt
   if (!query) {
@@ -3023,6 +3067,7 @@ function renderList() {
     if (item.type === 'melolo') badgeClass = 'red';
     else if (item.type === 'dramabox') badgeClass = 'badge';
     else if (item.type === 'reelshort') badgeClass = 'badge';
+    else if (item.type === 'freereels') badgeClass = 'red';
     else if (item.type === 'dramamovie') badgeClass = 'badge';
     else if (item.type === 'samehadaku') badgeClass = 'cyan';
     
@@ -3098,6 +3143,8 @@ async function openContent(id, title, type, slug) {
       await loadDramaboxEpisodes(id);
     } else if (type === "reelshort") {
       await loadReelshortEpisodes(id);
+    } else if (type === "freereels") {
+      await loadFreereelsEpisodes(id);
     } else if (type === "dramamovie") {
       await loadDramaMovieEpisodes(id);
     } else if (type === "samehadaku") {
@@ -3152,6 +3199,22 @@ async function loadDramaboxEpisodes(bookId) {
 
 async function loadReelshortEpisodes(id) {
   const json = await jget("/reelshort/detail?id=" + encodeURIComponent(id));
+  const videos = json?.data?.video_list || [];
+
+  state.episodes = videos.map((v, idx) => ({
+    index: idx,
+    chapterId: v.chapterId || "",
+    label: "Ep " + v.index,
+    isLocked: v.isLocked || false
+  }));
+
+  if (state.episodes.length) {
+    state.currentEpIndex = 0;
+  }
+}
+
+async function loadFreereelsEpisodes(id) {
+  const json = await jget("/freereels/detail?id=" + encodeURIComponent(id));
   const videos = json?.data?.video_list || [];
 
   state.episodes = videos.map((v, idx) => ({
@@ -3321,6 +3384,8 @@ async function loadAndPlay() {
         await loadDramaboxVideo(ep);
       } else if (state.source === "reelshort") {
         await loadReelshortVideo(ep);
+      } else if (state.source === "freereels") {
+        await loadFreereelsVideo(ep);
       } else if (state.source === "dramamovie") {
         await loadDramaMovieVideo(ep);
       }
@@ -3489,6 +3554,62 @@ async function loadReelshortVideo(ep) {
 
   state.qualities = hlsQualities;
   console.log("ReelShort qualities loaded:", state.qualities.length);
+}
+
+async function loadFreereelsVideo(ep) {
+  console.log("Loading FreeReels video, chapterId:", ep.chapterId);
+
+  const json = await jget(
+    "/freereels/stream?id=" + encodeURIComponent(state.currentId) +
+    "&chapterId=" + encodeURIComponent(ep.chapterId)
+  );
+
+  console.log("FreeReels stream response:", json);
+
+  if (json?.message !== "success") {
+    throw new Error("API gagal: " + (json?.error || json?.message || "Unknown error"));
+  }
+
+  const data = json.data || {};
+  const videoList = Array.isArray(data.videoList) ? data.videoList : [];
+
+  if (videoList.length === 0 && !data.playlist_url) {
+    throw new Error("Video tidak tersedia");
+  }
+
+  var hlsQualities = [];
+  if (data.playlist_url) {
+    var proxyUrl = "/stream?url=" + encodeURIComponent(data.playlist_url);
+    hlsQualities.push({
+      label: "720p",
+      value: 0,
+      url: proxyUrl,
+      originalUrl: data.playlist_url,
+      isDefault: true,
+      isHLS: true
+    });
+  }
+
+  videoList.forEach(function(v, i) {
+    if (v.playUrl && v.dpi > 0) {
+      var pUrl = "/stream?url=" + encodeURIComponent(v.playUrl);
+      hlsQualities.push({
+        label: v.dpi + "p",
+        value: hlsQualities.length,
+        url: pUrl,
+        originalUrl: v.playUrl,
+        isDefault: v.dpi === 720,
+        isHLS: true
+      });
+    }
+  });
+
+  if (hlsQualities.length === 0) {
+    throw new Error("Tidak ada stream video yang tersedia");
+  }
+
+  state.qualities = hlsQualities;
+  console.log("FreeReels qualities loaded:", state.qualities.length);
 }
 
 async function loadDramaMovieVideo(ep) {
