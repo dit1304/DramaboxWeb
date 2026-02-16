@@ -2301,6 +2301,9 @@ function htmlPage() {
         <select class="quality-select" id="qualitySelect">
           <option value="">Auto</option>
         </select>
+        <select class="quality-select" id="subtitleSelect" style="display:none;">
+          <option value="off">Sub: OFF</option>
+        </select>
         <div class="speed-control">
           <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Speed:</span>
           <button class="speed-btn" data-speed="0.5">0.5x</button>
@@ -3876,7 +3879,12 @@ function applyQuality(preserveTime = false) {
   var oldTracks = video.querySelectorAll("track");
   oldTracks.forEach(function(t) { t.remove(); });
 
-  if (state.source === "freereels" && state.freereelsSubtitles && state.freereelsSubtitles.length > 0) {
+  var subSel = $("subtitleSelect");
+  if (!subSel) subSel = document.getElementById("subtitleSelect");
+
+  if (subSel && state.source === "freereels" && state.freereelsSubtitles && state.freereelsSubtitles.length > 0) {
+    subSel.innerHTML = '<option value="off">Sub: OFF</option>';
+    var defaultIdx = -1;
     state.freereelsSubtitles.forEach(function(sub, i) {
       var track = document.createElement("track");
       track.kind = "subtitles";
@@ -3885,10 +3893,55 @@ function applyQuality(preserveTime = false) {
       track.src = "/stream?url=" + encodeURIComponent(sub.url);
       if (sub.language === "id-ID" || sub.type === "original") {
         track.default = true;
+        defaultIdx = i;
       }
       video.appendChild(track);
+
+      var opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = sub.display_name || sub.language;
+      if (sub.language === "id-ID" || sub.type === "original") {
+        opt.textContent += " ★";
+      }
+      subSel.appendChild(opt);
     });
-    console.log("Subtitles loaded:", state.freereelsSubtitles.length);
+
+    if (defaultIdx >= 0) {
+      subSel.value = String(defaultIdx);
+    }
+
+    subSel.style.display = "";
+    subSel.onchange = function() {
+      var tracks = video.textTracks;
+      for (var t = 0; t < tracks.length; t++) {
+        tracks[t].mode = "disabled";
+      }
+      if (subSel.value !== "off") {
+        var idx = parseInt(subSel.value, 10);
+        if (tracks[idx]) {
+          tracks[idx].mode = "showing";
+        }
+      }
+    };
+
+    var activateDefault = function() {
+      var tracks = video.textTracks;
+      if (!tracks || tracks.length === 0) {
+        setTimeout(activateDefault, 300);
+        return;
+      }
+      for (var t = 0; t < tracks.length; t++) {
+        tracks[t].mode = "disabled";
+      }
+      if (defaultIdx >= 0 && tracks[defaultIdx]) {
+        tracks[defaultIdx].mode = "showing";
+      }
+    };
+    setTimeout(activateDefault, 300);
+
+    console.log("Subtitles loaded:", state.freereelsSubtitles.length, "default:", defaultIdx);
+  } else if (subSel) {
+    subSel.style.display = "none";
   }
 
   // Track video play (only for new episodes)
