@@ -508,14 +508,12 @@ async function proxyStream(request, url) {
       const rewritten = lines.map(line => {
         const trimmed = line.trim();
         if (!trimmed) return line;
-        if (trimmed.startsWith("#EXT-X-MAP:URI=")) {
-          const match = trimmed.match(/URI="([^"]+)"/);
-          if (match) {
-            let mapUrl = match[1];
-            if (!mapUrl.startsWith("http")) mapUrl = baseUrl + mapUrl;
-            return '#EXT-X-MAP:URI="/stream?url=' + encodeURIComponent(mapUrl) + '"';
-          }
-          return line;
+        if (trimmed.includes('URI="')) {
+          return line.replace(/URI="([^"]+)"/g, function(match, uri) {
+            let absUrl = uri;
+            if (!absUrl.startsWith("http")) absUrl = baseUrl + absUrl;
+            return 'URI="/stream?url=' + encodeURIComponent(absUrl) + '"';
+          });
         }
         if (trimmed.startsWith("#")) return line;
         let segUrl = trimmed;
