@@ -8,6 +8,31 @@
 
 const API_BASE = "https://api.sonzaix.indevs.in";
 
+function parsePasswords(env) {
+  var list = [];
+  if (env.PANEL_PASSWORDS) {
+    env.PANEL_PASSWORDS.split(",").forEach(function(entry) {
+      var parts = entry.trim().split(":");
+      if (parts.length >= 2) {
+        var pass = parts.slice(0, -1).join(":");
+        var days = parseInt(parts[parts.length - 1], 10);
+        if (pass && days > 0) list.push({ password: pass, days: days });
+      }
+    });
+  }
+  if (env.PANEL_PASSWORD) {
+    list.push({ password: env.PANEL_PASSWORD, days: 0 });
+  }
+  return list;
+}
+
+function findPassword(passwords, input) {
+  for (var i = 0; i < passwords.length; i++) {
+    if (passwords[i].password === input) return passwords[i];
+  }
+  return null;
+}
+
 async function generateSessionToken(password, secret) {
   const encoder = new TextEncoder();
   const data = encoder.encode(password + ":" + secret);
@@ -15,10 +40,63 @@ async function generateSessionToken(password, secret) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+async function createSession(password, days, secret) {
+  var loginAt = Date.now();
+  var token = await generateSessionToken(password + ":" + loginAt + ":" + days, secret);
+  return token + "." + loginAt + "." + days;
+}
+
+async function verifySession(sessionStr, passwords, secret) {
+  if (!sessionStr) return null;
+  var parts = sessionStr.split(".");
+  if (parts.length === 1) {
+    for (var i = 0; i < passwords.length; i++) {
+      var oldToken = await generateSessionToken(passwords[i].password, passwords[i].password);
+      if (sessionStr === oldToken && passwords[i].days === 0) {
+        return { valid: true, days: 0, remaining: -1 };
+      }
+    }
+    return null;
+  }
+  if (parts.length !== 3) return null;
+  var token = parts[0];
+  var loginAt = parseInt(parts[1], 10);
+  var days = parseInt(parts[2], 10);
+  if (isNaN(loginAt) || isNaN(days)) return null;
+  if (loginAt > Date.now() + 60000) return null;
+
+  var matched = false;
+  for (var j = 0; j < passwords.length; j++) {
+    var expected = await generateSessionToken(passwords[j].password + ":" + loginAt + ":" + days, secret);
+    if (token === expected && passwords[j].days === days) { matched = true; break; }
+  }
+  if (!matched) return null;
+
+  if (days > 0) {
+    var elapsed = Date.now() - loginAt;
+    var maxMs = days * 24 * 60 * 60 * 1000;
+    if (elapsed > maxMs) return { valid: false, expired: true, days: days };
+    var remainMs = maxMs - elapsed;
+    return { valid: true, days: days, remaining: remainMs, loginAt: loginAt };
+  }
+  return { valid: true, days: 0, remaining: -1 };
+}
+
 function getSessionCookie(request) {
   const cookie = request.headers.get("cookie") || "";
   const match = cookie.match(/session=([^;]+)/);
   return match ? match[1] : null;
+}
+
+function formatRemaining(ms) {
+  if (ms < 0) return "Unlimited";
+  var totalSec = Math.floor(ms / 1000);
+  var d = Math.floor(totalSec / 86400);
+  var h = Math.floor((totalSec % 86400) / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  if (d > 0) return d + " hari " + h + " jam";
+  if (h > 0) return h + " jam " + m + " menit";
+  return m + " menit";
 }
 
 function loginPage(error) {
@@ -66,19 +144,23 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (env.PANEL_PASSWORD) {
-      const validToken = await generateSessionToken(env.PANEL_PASSWORD, env.PANEL_PASSWORD);
+    var passwords = parsePasswords(env);
+    if (passwords.length > 0) {
+      var authSecret = env.PANEL_PASSWORD || env.PANEL_PASSWORDS || "streambox";
 
       if (url.pathname === "/login") {
         if (request.method === "POST") {
           const formData = await request.formData();
           const password = formData.get("password") || "";
-          if (password === env.PANEL_PASSWORD) {
+          var matched = findPassword(passwords, password);
+          if (matched) {
+            var sessionVal = await createSession(password, matched.days, authSecret);
+            var maxAge = matched.days > 0 ? matched.days * 86400 : 604800;
             return new Response(null, {
               status: 302,
               headers: {
                 "Location": "/",
-                "Set-Cookie": "session=" + validToken + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+                "Set-Cookie": "session=" + sessionVal + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + maxAge,
               },
             });
           }
@@ -103,14 +185,47 @@ export default {
         });
       }
 
+      if (url.pathname === "/session-info") {
+        var siCookie = getSessionCookie(request);
+        var siResult = await verifySession(siCookie, passwords, authSecret);
+        if (siResult && siResult.valid) {
+          return new Response(JSON.stringify({
+            active: true,
+            days: siResult.days,
+            remaining: siResult.remaining,
+            remainingText: formatRemaining(siResult.remaining),
+            unlimited: siResult.days === 0
+          }), { headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ active: false }), {
+          headers: { "content-type": "application/json" }
+        });
+      }
+
       const sessionCookie = getSessionCookie(request);
-      if (sessionCookie !== validToken) {
+      var sessionResult = await verifySession(sessionCookie, passwords, authSecret);
+      if (!sessionResult || !sessionResult.valid) {
+        var expiredMsg = (sessionResult && sessionResult.expired) ? "Password sudah expired! Hubungi admin untuk password baru." : null;
         if (url.pathname.startsWith("/api/") || url.pathname === "/stream") {
-          return new Response("Unauthorized", { status: 401, headers: corsHeaders() });
+          return new Response(JSON.stringify({ error: expiredMsg || "Unauthorized" }), {
+            status: 401, headers: { ...corsHeaders(), "content-type": "application/json" }
+          });
+        }
+        if (expiredMsg) {
+          return new Response(loginPage(expiredMsg), {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
+            },
+          });
         }
         return new Response(null, {
           status: 302,
-          headers: { "Location": "/login" },
+          headers: {
+            "Location": "/login",
+            "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
+          },
         });
       }
     }
@@ -848,6 +963,29 @@ function htmlPage() {
       transform: translateY(0px);
     }
 
+    .session-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(139,92,246,0.12);
+      border: 1px solid rgba(139,92,246,0.25);
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #c4b5fd;
+      white-space: nowrap;
+    }
+    .session-badge .logout-link {
+      color: #f87171;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 11px;
+      padding: 2px 8px;
+      background: rgba(239,68,68,0.12);
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    .session-badge .logout-link:hover { background: rgba(239,68,68,0.25); }
 
     /* Pagination */
     .pagination {
@@ -2213,6 +2351,10 @@ function htmlPage() {
         <input type="text" class="search-input" id="searchInput" placeholder="Cari..." autocomplete="off" />
         <button class="search-btn" id="btnSearch">Cari</button>
         <div class="search-suggestions" id="searchSuggestions"></div>
+      </div>
+      <div class="session-badge" id="sessionBadge" style="display:none;">
+        <span id="sessionTimer"></span>
+        <a href="/logout" class="logout-link">Logout</a>
       </div>
     </header>
 
@@ -4404,6 +4546,33 @@ $("statsModal").onclick = (e) => {
     $("statsModal").classList.remove("show");
   }
 };
+
+// ========== SESSION INFO ==========
+(function loadSessionInfo() {
+  fetch("/session-info").then(r => r.json()).then(info => {
+    var badge = $("sessionBadge");
+    var timer = $("sessionTimer");
+    if (!badge || !timer) return;
+    if (!info.active) return;
+    badge.style.display = "flex";
+    if (info.unlimited) {
+      timer.textContent = "⏳ Unlimited";
+    } else {
+      timer.textContent = "⏳ Sisa: " + info.remainingText;
+      setInterval(function() {
+        fetch("/session-info").then(r => r.json()).then(function(u) {
+          if (!u.active) {
+            timer.textContent = "❌ Expired";
+            timer.style.color = "#f87171";
+            setTimeout(function() { location.href = "/login"; }, 2000);
+          } else if (!u.unlimited) {
+            timer.textContent = "⏳ Sisa: " + u.remainingText;
+          }
+        }).catch(function(){});
+      }, 60000);
+    }
+  }).catch(function(){});
+})();
 
 // ========== INIT ==========
 loadStatistics();
