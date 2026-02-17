@@ -15,13 +15,23 @@ function parsePasswords(env) {
       var parts = entry.trim().split(":");
       if (parts.length >= 2) {
         var pass = parts.slice(0, -1).join(":");
-        var days = parseInt(parts[parts.length - 1], 10);
-        if (pass && days > 0) list.push({ password: pass, days: days });
+        var dateStr = parts[parts.length - 1].trim();
+        var expireMs = 0;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          expireMs = new Date(dateStr + "T23:59:59Z").getTime();
+        } else {
+          var days = parseInt(dateStr, 10);
+          if (days > 0) {
+            var now = new Date();
+            expireMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 23, 59, 59).getTime();
+          }
+        }
+        if (pass && expireMs > 0) list.push({ password: pass, expireAt: expireMs });
       }
     });
   }
   if (env.PANEL_PASSWORD) {
-    list.push({ password: env.PANEL_PASSWORD, days: 0 });
+    list.push({ password: env.PANEL_PASSWORD, expireAt: 0 });
   }
   return list;
 }
@@ -40,10 +50,9 @@ async function generateSessionToken(password, secret) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function createSession(password, days, secret) {
-  var loginAt = Date.now();
-  var token = await generateSessionToken(password + ":" + loginAt + ":" + days, secret);
-  return token + "." + loginAt + "." + days;
+async function createSession(password, expireAt, secret) {
+  var token = await generateSessionToken(password + ":" + expireAt, secret);
+  return token + "." + expireAt;
 }
 
 async function verifySession(sessionStr, passwords, secret) {
@@ -52,34 +61,31 @@ async function verifySession(sessionStr, passwords, secret) {
   if (parts.length === 1) {
     for (var i = 0; i < passwords.length; i++) {
       var oldToken = await generateSessionToken(passwords[i].password, passwords[i].password);
-      if (sessionStr === oldToken && passwords[i].days === 0) {
-        return { valid: true, days: 0, remaining: -1 };
+      if (sessionStr === oldToken && passwords[i].expireAt === 0) {
+        return { valid: true, expireAt: 0, remaining: -1 };
       }
     }
     return null;
   }
-  if (parts.length !== 3) return null;
+  if (parts.length !== 2) return null;
   var token = parts[0];
-  var loginAt = parseInt(parts[1], 10);
-  var days = parseInt(parts[2], 10);
-  if (isNaN(loginAt) || isNaN(days)) return null;
-  if (loginAt > Date.now() + 60000) return null;
+  var expireAt = parseInt(parts[1], 10);
+  if (isNaN(expireAt)) return null;
 
   var matched = false;
   for (var j = 0; j < passwords.length; j++) {
-    var expected = await generateSessionToken(passwords[j].password + ":" + loginAt + ":" + days, secret);
-    if (token === expected && passwords[j].days === days) { matched = true; break; }
+    var expected = await generateSessionToken(passwords[j].password + ":" + expireAt, secret);
+    if (token === expected && passwords[j].expireAt === expireAt) { matched = true; break; }
   }
   if (!matched) return null;
 
-  if (days > 0) {
-    var elapsed = Date.now() - loginAt;
-    var maxMs = days * 24 * 60 * 60 * 1000;
-    if (elapsed > maxMs) return { valid: false, expired: true, days: days };
-    var remainMs = maxMs - elapsed;
-    return { valid: true, days: days, remaining: remainMs, loginAt: loginAt };
+  if (expireAt > 0) {
+    var now = Date.now();
+    if (now > expireAt) return { valid: false, expired: true };
+    var remainMs = expireAt - now;
+    return { valid: true, expireAt: expireAt, remaining: remainMs };
   }
-  return { valid: true, days: 0, remaining: -1 };
+  return { valid: true, expireAt: 0, remaining: -1 };
 }
 
 function getSessionCookie(request) {
@@ -154,8 +160,15 @@ export default {
           const password = formData.get("password") || "";
           var matched = findPassword(passwords, password);
           if (matched) {
-            var sessionVal = await createSession(password, matched.days, authSecret);
-            var maxAge = matched.days > 0 ? matched.days * 86400 : 604800;
+            if (matched.expireAt > 0 && Date.now() > matched.expireAt) {
+              return new Response(loginPage("Password sudah expired sejak " + new Date(matched.expireAt).toLocaleDateString("id-ID", {day:"numeric",month:"long",year:"numeric"}) + "! Hubungi admin untuk password baru."), {
+                status: 200,
+                headers: { "content-type": "text/html; charset=utf-8" },
+              });
+            }
+            var sessionVal = await createSession(password, matched.expireAt, authSecret);
+            var maxAge = matched.expireAt > 0 ? Math.ceil((matched.expireAt - Date.now()) / 1000) : 604800;
+            if (maxAge < 1) maxAge = 1;
             return new Response(null, {
               status: 302,
               headers: {
@@ -189,12 +202,17 @@ export default {
         var siCookie = getSessionCookie(request);
         var siResult = await verifySession(siCookie, passwords, authSecret);
         if (siResult && siResult.valid) {
+          var expDateText = "";
+          if (siResult.expireAt > 0) {
+            expDateText = new Date(siResult.expireAt).toLocaleDateString("id-ID", {day:"numeric",month:"long",year:"numeric"});
+          }
           return new Response(JSON.stringify({
             active: true,
-            days: siResult.days,
+            expireAt: siResult.expireAt,
             remaining: siResult.remaining,
             remainingText: formatRemaining(siResult.remaining),
-            unlimited: siResult.days === 0
+            expireDateText: expDateText,
+            unlimited: siResult.expireAt === 0
           }), { headers: { "content-type": "application/json" } });
         }
         return new Response(JSON.stringify({ active: false }), {
@@ -4558,7 +4576,7 @@ $("statsModal").onclick = (e) => {
     if (info.unlimited) {
       timer.textContent = "⏳ Unlimited";
     } else {
-      timer.textContent = "⏳ Sisa: " + info.remainingText;
+      timer.textContent = "⏳ Exp: " + info.expireDateText + " (" + info.remainingText + ")";
       setInterval(function() {
         fetch("/session-info").then(r => r.json()).then(function(u) {
           if (!u.active) {
@@ -4566,7 +4584,7 @@ $("statsModal").onclick = (e) => {
             timer.style.color = "#f87171";
             setTimeout(function() { location.href = "/login"; }, 2000);
           } else if (!u.unlimited) {
-            timer.textContent = "⏳ Sisa: " + u.remainingText;
+            timer.textContent = "⏳ Exp: " + u.expireDateText + " (" + u.remainingText + ")";
           }
         }).catch(function(){});
       }, 60000);
