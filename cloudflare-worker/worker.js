@@ -2254,29 +2254,49 @@ function htmlPage() {
 
     @media (max-width: 768px) {
       .brand-title {
-        font-size: 42px;
-        letter-spacing: 6px;
+        font-size: 32px;
+        letter-spacing: 4px;
       }
       .brand-info {
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .brand-header {
+        padding: 16px 12px;
       }
       .header { 
         flex-direction: column; 
         align-items: stretch;
-        gap: 12px;
+        gap: 10px;
+        padding: 12px 14px;
+        top: 8px;
       }
       .search-box { max-width: none; }
       .logo { justify-content: center; }
+      .logo-icon { width: 32px; height: 32px; font-size: 16px; }
+      .logo-text { font-size: 17px; }
       .nav { 
         justify-content: center;
         flex-wrap: wrap;
+        gap: 6px;
+      }
+      .nav-btn {
+        padding: 8px 14px;
+        font-size: 12px;
       }
       .source-bar { 
         flex-wrap: wrap; 
         justify-content: center;
-        padding: 16px;
+        padding: 12px;
+        gap: 8px;
       }
+      .source-tab {
+        padding: 8px 14px;
+        font-size: 12px;
+        gap: 6px;
+      }
+      .source-tab .source-icon { font-size: 14px; }
       .pagination { 
         flex-wrap: wrap;
         gap: 6px;
@@ -2285,16 +2305,18 @@ function htmlPage() {
         grid-template-columns: 1fr;
       }
       .player-container {
-        padding: 0 12px;
+        padding: 0 8px;
       }
       .controls {
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
       }
       .control-btn {
         flex: 1;
-        min-width: 120px;
+        min-width: 100px;
         justify-content: center;
+        padding: 8px 12px;
+        font-size: 12px;
       }
       .speed-control {
         width: 100%;
@@ -2303,25 +2325,88 @@ function htmlPage() {
       }
       .theater-btn, .pip-btn {
         flex: 1;
-        min-width: 100px;
+        min-width: 90px;
         justify-content: center;
+        font-size: 12px;
       }
       .feature-section {
-        margin-bottom: 24px;
+        margin-bottom: 20px;
       }
       .section-title {
-        font-size: 16px;
+        font-size: 15px;
       }
       .section-icon {
-        font-size: 20px;
+        font-size: 18px;
       }
       .auto-next-overlay {
-        padding: 24px 32px;
-        max-width: 90%;
+        padding: 20px 24px;
+        max-width: 92%;
       }
       .countdown-number {
-        font-size: 48px;
+        font-size: 42px;
       }
+      .session-badge {
+        white-space: normal;
+        font-size: 11px;
+        justify-content: center;
+        text-align: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .card-body { padding: 10px; }
+      .card-title { font-size: 13px; margin-bottom: 6px; }
+      .badge { padding: 3px 8px; font-size: 10px; }
+      .play-icon { width: 28px; height: 28px; font-size: 10px; }
+      .mini-card-img { height: 160px; }
+      .mini-card-title { font-size: 12px; }
+      .mini-card-meta { font-size: 10px; }
+      .mini-card-body { padding: 8px; }
+      .episodes-grid { gap: 6px; }
+      .ep-btn { padding: 8px 6px; font-size: 12px; min-width: 42px; }
+    }
+
+    @media (max-width: 480px) {
+      .brand-title {
+        font-size: 26px;
+        letter-spacing: 3px;
+      }
+      .container { padding: 12px 8px; }
+      .header {
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 10px;
+      }
+      .nav-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+      .source-tab {
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+      .card-title { font-size: 12px; }
+      .card-body { padding: 8px; }
+      .badge { padding: 2px 6px; font-size: 9px; }
+      .play-icon { width: 24px; height: 24px; font-size: 9px; }
+      .control-btn {
+        min-width: 80px;
+        padding: 6px 8px;
+        font-size: 11px;
+      }
+      .session-badge {
+        font-size: 10px;
+        padding: 5px 8px;
+      }
+      .search-input { padding: 8px 12px; font-size: 13px; }
+      .search-btn { padding: 8px 14px; font-size: 13px; }
+      .mini-card-img { height: 130px; }
+      .mini-card-title { font-size: 11px; }
+      .ep-btn { padding: 6px 4px; font-size: 11px; min-width: 38px; }
+      .stats-dashboard { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 20px; }
+      .stat-card { padding: 14px; }
+      .stat-value { font-size: 22px; }
+      .stat-label { font-size: 11px; }
+      .stat-breakdown { font-size: 10px; }
     }
   </style>
 </head>
