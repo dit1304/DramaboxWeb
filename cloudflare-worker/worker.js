@@ -1,12 +1,38 @@
 /**
  * Cloudflare Worker - Multi-Source Streaming Panel
  * Supports: MELOLO, Dramabox, Samehadaku (Anime)
- * Features: Pagination, Multiple Quality Options
+ * Features: Pagination, Multiple Quality Options, Telegram Bot Admin
  * Deploy via GitHub Actions to Cloudflare Workers
  * API: Sonzaix Hub by @November2k
  */
 
 const API_BASE = "https://api.sonzaix.indevs.in";
+
+async function getKVPasswords(env) {
+  if (!env.ANALYTICS) return [];
+  try {
+    var data = await env.ANALYTICS.get("tgbot:passwords", "json");
+    return Array.isArray(data) ? data : [];
+  } catch(e) { return []; }
+}
+
+async function saveKVPasswords(env, list) {
+  if (!env.ANALYTICS) return;
+  await env.ANALYTICS.put("tgbot:passwords", JSON.stringify(list));
+}
+
+async function getIPSessions(env, password) {
+  if (!env.ANALYTICS) return [];
+  try {
+    var data = await env.ANALYTICS.get("tgbot:ips:" + password, "json");
+    return Array.isArray(data) ? data : [];
+  } catch(e) { return []; }
+}
+
+async function saveIPSessions(env, password, ips) {
+  if (!env.ANALYTICS) return;
+  await env.ANALYTICS.put("tgbot:ips:" + password, JSON.stringify(ips));
+}
 
 function parsePasswords(env) {
   var list = [];
@@ -26,14 +52,24 @@ function parsePasswords(env) {
             expireMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 23, 59, 59).getTime();
           }
         }
-        if (pass && expireMs > 0) list.push({ password: pass, expireAt: expireMs });
+        if (pass && expireMs > 0) list.push({ password: pass, expireAt: expireMs, maxIPs: 0 });
       }
     });
   }
   if (env.PANEL_PASSWORD) {
-    list.push({ password: env.PANEL_PASSWORD, expireAt: 0 });
+    list.push({ password: env.PANEL_PASSWORD, expireAt: 0, maxIPs: 0 });
   }
   return list;
+}
+
+async function getAllPasswords(env) {
+  var envList = parsePasswords(env);
+  var kvList = await getKVPasswords(env);
+  var combined = [];
+  var seen = {};
+  kvList.forEach(function(p) { combined.push(p); seen[p.password] = true; });
+  envList.forEach(function(p) { if (!seen[p.password]) { combined.push(p); seen[p.password] = true; } });
+  return combined;
 }
 
 function findPassword(passwords, input) {
@@ -41,6 +77,255 @@ function findPassword(passwords, input) {
     if (passwords[i].password === input) return passwords[i];
   }
   return null;
+}
+
+async function sendTelegram(env, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+  try {
+    await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: text, parse_mode: "HTML" })
+    });
+  } catch(e) {}
+}
+
+async function getKickedIPs(env, password) {
+  if (!env.ANALYTICS) return [];
+  try {
+    var data = await env.ANALYTICS.get("tgbot:kicked:" + password, "json");
+    return Array.isArray(data) ? data : [];
+  } catch(e) { return []; }
+}
+
+async function saveKickedIPs(env, password, ips) {
+  if (!env.ANALYTICS) return;
+  if (ips.length === 0) {
+    try { await env.ANALYTICS.delete("tgbot:kicked:" + password); } catch(e) {}
+  } else {
+    await env.ANALYTICS.put("tgbot:kicked:" + password, JSON.stringify(ips));
+  }
+}
+
+async function trackLoginIP(env, password, ip) {
+  var sessions = await getIPSessions(env, password);
+  var now = Date.now();
+  sessions = sessions.filter(function(s) { return now - s.lastSeen < 7 * 24 * 3600 * 1000; });
+  var existing = null;
+  for (var i = 0; i < sessions.length; i++) {
+    if (sessions[i].ip === ip) { existing = sessions[i]; break; }
+  }
+  var isNew = !existing;
+  if (existing) {
+    existing.lastSeen = now;
+    existing.count = (existing.count || 0) + 1;
+  } else {
+    sessions.push({ ip: ip, firstSeen: now, lastSeen: now, count: 1 });
+  }
+  await saveIPSessions(env, password, sessions);
+  var kicked = await getKickedIPs(env, password);
+  var newKicked = kicked.filter(function(k) { return k !== ip; });
+  if (newKicked.length !== kicked.length) await saveKickedIPs(env, password, newKicked);
+  return { isNew: isNew, sessions: sessions };
+}
+
+function timeAgo(ts) {
+  var diff = Date.now() - ts;
+  var mins = Math.floor(diff / 60000);
+  if (mins < 1) return "baru saja";
+  if (mins < 60) return mins + " menit lalu";
+  var hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + " jam lalu";
+  var days = Math.floor(hours / 24);
+  return days + " hari lalu";
+}
+
+async function handleTelegramWebhook(request, env) {
+  try {
+    var secretHeader = request.headers.get("x-telegram-bot-api-secret-token") || "";
+    var expectedSecret = env.TELEGRAM_WEBHOOK_SECRET || "";
+    if (expectedSecret && secretHeader !== expectedSecret) {
+      return new Response("unauthorized", { status: 403 });
+    }
+    if (!expectedSecret) {
+      var cfCountry = request.headers.get("cf-ipcountry") || "";
+      var ua = request.headers.get("user-agent") || "";
+      if (!ua.toLowerCase().includes("telegram") && cfCountry !== "NL" && cfCountry !== "US") {
+        return new Response("forbidden", { status: 403 });
+      }
+    }
+
+    var body = await request.json();
+    var msg = body.message;
+    if (!msg || !msg.text) return new Response("ok");
+
+    var chatId = String(msg.chat.id);
+    var allowedChat = env.TELEGRAM_CHAT_ID;
+    if (chatId !== allowedChat) {
+      await sendTelegram(env, "⛔ Akses ditolak. Chat ID kamu: <code>" + chatId + "</code>");
+      return new Response("ok");
+    }
+
+    var text = msg.text.trim();
+    var cmd = text.split(/\s+/)[0].toLowerCase().replace(/@\w+$/, "");
+    var args = text.substring(cmd.length).trim();
+
+    if (cmd === "/help" || cmd === "/start") {
+      var helpText = "🤖 <b>StreamBox Admin Bot</b>\n\n" +
+        "📋 <b>Password Management:</b>\n" +
+        "/addpass <code>password:YYYY-MM-DD</code> — Tambah password (tanggal expired)\n" +
+        "/addpass <code>password:YYYY-MM-DD:3</code> — Tambah + limit 3 IP\n" +
+        "/delpass <code>password</code> — Hapus password\n" +
+        "/listpass — Lihat semua password\n\n" +
+        "👥 <b>IP Management:</b>\n" +
+        "/ips <code>password</code> — Lihat IP aktif\n" +
+        "/kick <code>password IP</code> — Kick IP tertentu\n" +
+        "/kickall <code>password</code> — Kick semua IP\n\n" +
+        "ℹ️ Format tanggal: <code>2026-03-01</code>\n" +
+        "ℹ️ Limit IP opsional (0 = unlimited)";
+      await sendTelegram(env, helpText);
+    }
+    else if (cmd === "/addpass") {
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /addpass <code>password:YYYY-MM-DD</code> atau <code>password:YYYY-MM-DD:maxIP</code>");
+        return new Response("ok");
+      }
+      var parts = args.split(":");
+      if (parts.length < 2) {
+        await sendTelegram(env, "❌ Format: /addpass <code>password:YYYY-MM-DD</code>");
+        return new Response("ok");
+      }
+      var pass, dateStr, maxIPs = 0;
+      if (parts.length >= 3 && /^\d+$/.test(parts[parts.length - 1]) && /^\d{4}-\d{2}-\d{2}$/.test(parts[parts.length - 2])) {
+        maxIPs = parseInt(parts[parts.length - 1], 10);
+        dateStr = parts[parts.length - 2];
+        pass = parts.slice(0, -2).join(":");
+      } else {
+        dateStr = parts[parts.length - 1];
+        pass = parts.slice(0, -1).join(":");
+      }
+      var expireMs = 0;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        expireMs = new Date(dateStr + "T23:59:59Z").getTime();
+      } else if (/^\d+$/.test(dateStr)) {
+        var days = parseInt(dateStr, 10);
+        if (days > 0) {
+          var now = new Date();
+          expireMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, 23, 59, 59).getTime();
+        }
+      }
+      if (!pass || expireMs === 0) {
+        await sendTelegram(env, "❌ Format tanggal salah. Gunakan: <code>YYYY-MM-DD</code> atau jumlah hari (angka)");
+        return new Response("ok");
+      }
+      var kvList = await getKVPasswords(env);
+      var found = false;
+      for (var i = 0; i < kvList.length; i++) {
+        if (kvList[i].password === pass) {
+          kvList[i].expireAt = expireMs;
+          kvList[i].maxIPs = maxIPs;
+          found = true;
+          break;
+        }
+      }
+      if (!found) kvList.push({ password: pass, expireAt: expireMs, maxIPs: maxIPs });
+      await saveKVPasswords(env, kvList);
+      var expDate = new Date(expireMs).toLocaleDateString("id-ID", {day:"numeric",month:"long",year:"numeric"});
+      await sendTelegram(env, "✅ Password " + (found ? "diperbarui" : "ditambahkan") + "!\n\n" +
+        "🔑 Password: <code>" + pass + "</code>\n" +
+        "📅 Expired: " + expDate + "\n" +
+        "👥 Max IP: " + (maxIPs > 0 ? maxIPs : "Unlimited"));
+    }
+    else if (cmd === "/delpass") {
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /delpass <code>password</code>");
+        return new Response("ok");
+      }
+      var kvList = await getKVPasswords(env);
+      var newList = kvList.filter(function(p) { return p.password !== args; });
+      if (newList.length === kvList.length) {
+        await sendTelegram(env, "❌ Password <code>" + args + "</code> tidak ditemukan di daftar bot.\n\n⚠️ Password dari env PANEL_PASSWORDS tidak bisa dihapus lewat bot.");
+        return new Response("ok");
+      }
+      await saveKVPasswords(env, newList);
+      if (env.ANALYTICS) {
+        try { await env.ANALYTICS.delete("tgbot:ips:" + args); } catch(e) {}
+      }
+      await sendTelegram(env, "🗑 Password <code>" + args + "</code> berhasil dihapus!");
+    }
+    else if (cmd === "/listpass") {
+      var allPass = await getAllPasswords(env);
+      if (allPass.length === 0) {
+        await sendTelegram(env, "📋 Belum ada password yang terdaftar.");
+        return new Response("ok");
+      }
+      var lines = ["📋 <b>Daftar Password (" + allPass.length + ")</b>\n"];
+      for (var i = 0; i < allPass.length; i++) {
+        var p = allPass[i];
+        var expText = p.expireAt > 0 ? new Date(p.expireAt).toLocaleDateString("id-ID", {day:"numeric",month:"short",year:"numeric"}) : "Unlimited";
+        var isExpired = p.expireAt > 0 && Date.now() > p.expireAt;
+        var status = isExpired ? "🔴 Expired" : "🟢 Aktif";
+        var ipSessions = await getIPSessions(env, p.password);
+        var activeIPs = ipSessions.filter(function(s) { return Date.now() - s.lastSeen < 7 * 24 * 3600 * 1000; });
+        var maxLabel = p.maxIPs > 0 ? p.maxIPs : "∞";
+        lines.push((i + 1) + ". <code>" + p.password + "</code>\n   " + status + " | 📅 " + expText + " | 👥 " + activeIPs.length + "/" + maxLabel);
+      }
+      await sendTelegram(env, lines.join("\n"));
+    }
+    else if (cmd === "/ips") {
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /ips <code>password</code>");
+        return new Response("ok");
+      }
+      var sessions = await getIPSessions(env, args);
+      var active = sessions.filter(function(s) { return Date.now() - s.lastSeen < 7 * 24 * 3600 * 1000; });
+      if (active.length === 0) {
+        await sendTelegram(env, "👥 Tidak ada IP aktif untuk password <code>" + args + "</code>");
+        return new Response("ok");
+      }
+      active.sort(function(a, b) { return b.lastSeen - a.lastSeen; });
+      var lines = ["👥 <b>IP Aktif - " + args + "</b> (" + active.length + " device)\n"];
+      for (var i = 0; i < active.length; i++) {
+        var s = active[i];
+        lines.push((i + 1) + ". <code>" + s.ip + "</code>\n   Terakhir: " + timeAgo(s.lastSeen) + " | Login: " + (s.count || 1) + "x");
+      }
+      await sendTelegram(env, lines.join("\n"));
+    }
+    else if (cmd === "/kick") {
+      var kickParts = args.split(/\s+/);
+      if (kickParts.length < 2) {
+        await sendTelegram(env, "❌ Format: /kick <code>password IP</code>");
+        return new Response("ok");
+      }
+      var kickPass = kickParts[0];
+      var kickIP = kickParts[1];
+      var sessions = await getIPSessions(env, kickPass);
+      var newSessions = sessions.filter(function(s) { return s.ip !== kickIP; });
+      if (newSessions.length === sessions.length) {
+        await sendTelegram(env, "❌ IP <code>" + kickIP + "</code> tidak ditemukan untuk password <code>" + kickPass + "</code>");
+        return new Response("ok");
+      }
+      await saveIPSessions(env, kickPass, newSessions);
+      var kicked = await getKickedIPs(env, kickPass);
+      if (!kicked.includes(kickIP)) { kicked.push(kickIP); await saveKickedIPs(env, kickPass, kicked); }
+      await sendTelegram(env, "🚫 IP <code>" + kickIP + "</code> telah di-kick dari password <code>" + kickPass + "</code>\n\n✅ Akses langsung diblokir.");
+    }
+    else if (cmd === "/kickall") {
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /kickall <code>password</code>");
+        return new Response("ok");
+      }
+      var sessions = await getIPSessions(env, args);
+      var allIps = sessions.map(function(s) { return s.ip; });
+      await saveIPSessions(env, args, []);
+      if (allIps.length > 0) await saveKickedIPs(env, args, allIps);
+      await sendTelegram(env, "🚫 Semua IP (" + allIps.length + ") untuk password <code>" + args + "</code> telah di-kick!\n\n✅ Akses langsung diblokir.");
+    }
+
+    return new Response("ok");
+  } catch(e) {
+    return new Response("error: " + e.message, { status: 500 });
+  }
 }
 
 async function generateSessionToken(password, secret) {
@@ -62,7 +347,7 @@ async function verifySession(sessionStr, passwords, secret) {
     for (var i = 0; i < passwords.length; i++) {
       var oldToken = await generateSessionToken(passwords[i].password, passwords[i].password);
       if (sessionStr === oldToken && passwords[i].expireAt === 0) {
-        return { valid: true, expireAt: 0, remaining: -1 };
+        return { valid: true, expireAt: 0, remaining: -1, matchedPassword: passwords[i].password };
       }
     }
     return null;
@@ -73,9 +358,10 @@ async function verifySession(sessionStr, passwords, secret) {
   if (isNaN(expireAt)) return null;
 
   var matched = false;
+  var matchedPass = "";
   for (var j = 0; j < passwords.length; j++) {
     var expected = await generateSessionToken(passwords[j].password + ":" + expireAt, secret);
-    if (token === expected && passwords[j].expireAt === expireAt) { matched = true; break; }
+    if (token === expected && passwords[j].expireAt === expireAt) { matched = true; matchedPass = passwords[j].password; break; }
   }
   if (!matched) return null;
 
@@ -83,9 +369,9 @@ async function verifySession(sessionStr, passwords, secret) {
     var now = Date.now();
     if (now > expireAt) return { valid: false, expired: true };
     var remainMs = expireAt - now;
-    return { valid: true, expireAt: expireAt, remaining: remainMs };
+    return { valid: true, expireAt: expireAt, remaining: remainMs, matchedPassword: matchedPass };
   }
-  return { valid: true, expireAt: 0, remaining: -1 };
+  return { valid: true, expireAt: 0, remaining: -1, matchedPassword: matchedPass };
 }
 
 function getSessionCookie(request) {
@@ -150,7 +436,11 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    var passwords = parsePasswords(env);
+    if (url.pathname === "/telegram-webhook" && request.method === "POST") {
+      return handleTelegramWebhook(request, env);
+    }
+
+    var passwords = await getAllPasswords(env);
     if (passwords.length > 0) {
       var authSecret = env.PANEL_PASSWORD || env.PANEL_PASSWORDS || "streambox";
 
@@ -165,6 +455,23 @@ export default {
                 status: 200,
                 headers: { "content-type": "text/html; charset=utf-8" },
               });
+            }
+            var loginIP = request.headers.get("cf-connecting-ip") || "unknown";
+            if (matched.maxIPs > 0) {
+              var currentSessions = await getIPSessions(env, password);
+              var activeSessions = currentSessions.filter(function(s) { return Date.now() - s.lastSeen < 7 * 24 * 3600 * 1000; });
+              var alreadyRegistered = activeSessions.some(function(s) { return s.ip === loginIP; });
+              if (!alreadyRegistered && activeSessions.length >= matched.maxIPs) {
+                ctx.waitUntil(sendTelegram(env, "⚠️ <b>Login Ditolak - Limit IP</b>\n\n🔑 Password: <code>" + password + "</code>\n🌐 IP: <code>" + loginIP + "</code>\n👥 Aktif: " + activeSessions.length + "/" + matched.maxIPs + "\n\nIP baru ditolak karena sudah mencapai batas device."));
+                return new Response(loginPage("Batas device tercapai (" + matched.maxIPs + " device). Hubungi admin!"), {
+                  status: 200,
+                  headers: { "content-type": "text/html; charset=utf-8" },
+                });
+              }
+            }
+            var ipResult = await trackLoginIP(env, password, loginIP);
+            if (ipResult.isNew) {
+              ctx.waitUntil(sendTelegram(env, "🔔 <b>Login Baru</b>\n\n🔑 Password: <code>" + password + "</code>\n🌐 IP: <code>" + loginIP + "</code>\n👥 Total device: " + ipResult.sessions.length + (matched.maxIPs > 0 ? "/" + matched.maxIPs : "") + " IP aktif\n\n📋 IP aktif:\n" + ipResult.sessions.map(function(s, i) { return (i + 1) + ". <code>" + s.ip + "</code>" + (s.ip === loginIP ? " (baru)" : " (" + timeAgo(s.lastSeen) + ")"); }).join("\n")));
             }
             var sessionVal = await createSession(password, matched.expireAt, authSecret);
             var maxAge = matched.expireAt > 0 ? Math.ceil((matched.expireAt - Date.now()) / 1000) : 604800;
@@ -245,6 +552,25 @@ export default {
             "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
           },
         });
+      }
+
+      var reqIP = request.headers.get("cf-connecting-ip") || "unknown";
+      if (env.ANALYTICS && reqIP !== "unknown" && sessionResult.matchedPassword) {
+        var kickedList = await getKickedIPs(env, sessionResult.matchedPassword);
+        if (kickedList.includes(reqIP)) {
+          if (url.pathname.startsWith("/api/") || url.pathname === "/stream") {
+            return new Response(JSON.stringify({ error: "Akses diblokir. Hubungi admin." }), {
+              status: 403, headers: { ...corsHeaders(), "content-type": "application/json" }
+            });
+          }
+          return new Response(loginPage("Akses kamu telah diblokir oleh admin. Hubungi admin untuk info lebih lanjut."), {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "Set-Cookie": "session=; Path=/; HttpOnly; Max-Age=0",
+            },
+          });
+        }
       }
     }
 

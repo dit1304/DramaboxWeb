@@ -36,13 +36,34 @@ The project maintains two parallel implementations:
 - Endpoints follow a pattern like `/melolo/...`, `/dramabox/...`, `/tensei/...` for different sources
 - Content includes: listings (with pagination), search, episode details, and video stream URLs
 
-### Authentication
+### Authentication & Password Management
 
 - Simple **password-based login** with session cookies
 - Password is hashed with SHA-256 combined with a secret to generate a session token
-- Session stored as a cookie (`session=<token>`)
+- Session stored as a cookie (`session=<token>.expireAt`)
 - Login page is rendered server-side by the worker
-- The password and secret are configured as environment variables or hardcoded in the worker
+- Passwords can be set via env vars (PANEL_PASSWORDS) or managed via **Telegram Bot**
+- Password expiry system: fixed date (YYYY-MM-DD) or days-based
+- **IP tracking per password**: tracks which IPs use each password (7-day window)
+- **Max IP limit per password**: optional device limit enforcement
+- **Kicked IP enforcement**: admin can kick IPs via Telegram, immediately blocking access
+
+### Telegram Bot Admin
+
+- Webhook endpoint: `/telegram-webhook`
+- Bot commands:
+  - `/addpass password:YYYY-MM-DD` or `/addpass password:YYYY-MM-DD:maxIP` — Add/update password
+  - `/delpass password` — Delete password
+  - `/listpass` — List all passwords with status, expiry, and active IP count
+  - `/ips password` — View active IPs for a password
+  - `/kick password IP` — Kick specific IP (immediately blocks access)
+  - `/kickall password` — Kick all IPs for a password
+  - `/help` — Show command list
+- Notifications: Bot sends alerts on new IP login and blocked login attempts
+- Passwords stored in Cloudflare KV (prefix: `tgbot:passwords`, `tgbot:ips:`, `tgbot:kicked:`)
+- Webhook secured via `X-Telegram-Bot-Api-Secret-Token` header (env: `TELEGRAM_WEBHOOK_SECRET`)
+- Required env vars: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- Optional: `TELEGRAM_WEBHOOK_SECRET` for webhook signature verification
 
 ### Analytics (Optional)
 
