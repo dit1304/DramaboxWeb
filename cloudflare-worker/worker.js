@@ -2722,11 +2722,13 @@ const storage = {
 
 // Continue Watching Manager
 const continueWatching = {
-  save(source, id, title, img, episode, currentTime, duration) {
+  save(source, id, title, img, episode, currentTime, duration, epIndex, epSlug) {
     const watching = storage.get('continue_watching') || {};
     const key = source + '_' + id;
     watching[key] = {
       source, id, title, img, episode, currentTime, duration,
+      epIndex: epIndex !== undefined ? epIndex : 0,
+      epSlug: epSlug || '',
       timestamp: Date.now()
     };
     storage.set('continue_watching', watching);
@@ -2843,24 +2845,35 @@ function renderContinueWatching() {
   }
   
   section.style.display = "block";
-  container.innerHTML = list.map(item => {
-    const progress = (item.currentTime / item.duration) * 100;
-    return '<div class="mini-card" data-source="' + item.source + '" data-id="' + item.id + '">' +
+  container.innerHTML = list.map((item, idx) => {
+    const progress = item.duration > 0 ? (item.currentTime / item.duration) * 100 : 0;
+    var mins = Math.floor((item.currentTime || 0) / 60);
+    var secs = Math.floor((item.currentTime || 0) % 60);
+    var timeStr = mins + ":" + (secs < 10 ? "0" : "") + secs;
+    var durMins = Math.floor((item.duration || 0) / 60);
+    var durSecs = Math.floor((item.duration || 0) % 60);
+    var durStr = durMins + ":" + (durSecs < 10 ? "0" : "") + durSecs;
+    var metaText = (item.episode || "Ep 1") + " • " + timeStr + " / " + durStr;
+    return '<div class="mini-card" data-idx="' + idx + '">' +
       '<img class="mini-card-img" src="' + esc(item.img) + '" alt="' + esc(item.title) + '" />' +
       '<div class="progress-bar"><div class="progress-fill" style="width: ' + progress + '%"></div></div>' +
       '<div class="mini-card-body">' +
         '<div class="mini-card-title">' + esc(item.title) + '</div>' +
-        '<div class="mini-card-meta">' + esc(item.episode) + '</div>' +
+        '<div class="mini-card-meta">' + esc(metaText) + '</div>' +
       '</div>' +
     '</div>';
   }).join('');
   
   container.querySelectorAll('.mini-card').forEach(card => {
     card.onclick = () => {
-      state.source = card.dataset.source;
-      switchSource(card.dataset.source);
+      var item = list[parseInt(card.dataset.idx, 10)];
+      if (!item) return;
+      state.source = item.source;
+      state.resumeEpIndex = item.epIndex || 0;
+      state.resumeTime = item.currentTime || 0;
+      switchSource(item.source);
       setTimeout(() => {
-        openContent(card.dataset.id, '', card.dataset.source, '');
+        openContentResume(item.id, item.title, item.source, '', item.epIndex || 0, item.currentTime || 0);
       }, 500);
     };
   });
@@ -3327,6 +3340,62 @@ async function openContent(id, title, type, slug) {
       if (state.episodes.length > 0) {
         await loadAndPlay();
       }
+    }
+  } catch (err) {
+    toast("Error: " + err.message);
+  }
+}
+
+async function openContentResume(id, title, type, slug, epIndex, resumeTime) {
+  state.currentId = id;
+  state.currentSlug = slug || id;
+  state.currentTitle = title || "Untitled";
+  state.episodes = [];
+  state.currentEpIndex = 0;
+  state.qualities = [];
+
+  $("playerTitle").textContent = title;
+  $("playerSubtitle").textContent = "Memuat...";
+  $("playerOverlay").classList.add("active");
+  document.body.style.overflow = "hidden";
+
+  try {
+    if (type === "melolo") {
+      await loadMeloloEpisodes(id);
+    } else if (type === "dramabox") {
+      await loadDramaboxEpisodes(id);
+    } else if (type === "reelshort") {
+      await loadReelshortEpisodes(id);
+    } else if (type === "freereels") {
+      await loadFreereelsEpisodes(id);
+    } else if (type === "dramamovie") {
+      await loadDramaMovieEpisodes(id);
+    } else if (type === "samehadaku") {
+      await loadSamehadakuEpisodes(title);
+    }
+
+    if (epIndex >= 0 && epIndex < state.episodes.length) {
+      state.currentEpIndex = epIndex;
+    }
+    renderEpisodes();
+    await loadAndPlay();
+
+    if (resumeTime > 0) {
+      var video = $("videoPlayer");
+      var seekTries = 0;
+      var seekResume = function() {
+        seekTries++;
+        if (seekTries > 30) return;
+        if (video.readyState >= 1 && video.duration > 0) {
+          if (resumeTime < video.duration - 2) {
+            video.currentTime = resumeTime;
+            toast("▶ Lanjut dari " + Math.floor(resumeTime / 60) + ":" + ("0" + Math.floor(resumeTime % 60)).slice(-2));
+          }
+        } else {
+          setTimeout(seekResume, 300);
+        }
+      };
+      setTimeout(seekResume, 500);
     }
   } catch (err) {
     toast("Error: " + err.message);
@@ -4302,7 +4371,9 @@ videoPlayer.addEventListener('timeupdate', () => {
         state.list.find(item => item.id === state.currentId)?.img || '',
         ep.label,
         video.currentTime,
-        video.duration
+        video.duration,
+        state.currentEpIndex,
+        ep.slug || ep.vid || ''
       );
     }
   }
