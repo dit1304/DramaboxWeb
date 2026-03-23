@@ -87,8 +87,17 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function getAllowedTelegramChatIds(env) {
+  var raw = env.TELEGRAM_ADMIN_IDS || env.TELEGRAM_CHAT_ID || "";
+  return raw
+    .split(",")
+    .map(function(id) { return id.trim(); })
+    .filter(Boolean);
+}
+
 async function sendTelegram(env, text, chatId) {
-  var targetChatId = chatId || env.TELEGRAM_CHAT_ID;
+  var allowedChatIds = getAllowedTelegramChatIds(env);
+  var targetChatId = chatId || allowedChatIds[0] || "";
   if (!env.TELEGRAM_BOT_TOKEN || !targetChatId) return;
   try {
     await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
@@ -196,8 +205,9 @@ async function handleTelegramWebhook(request, env) {
     if (!msg || !msg.text) return new Response("ok");
 
     var chatId = String(msg.chat.id);
-    var allowedChat = env.TELEGRAM_CHAT_ID;
-    if (chatId !== allowedChat) {
+    var allowedChatIds = getAllowedTelegramChatIds(env);
+    var hasConfiguredAdmin = allowedChatIds.length > 0;
+    if (hasConfiguredAdmin && allowedChatIds.indexOf(chatId) === -1) {
       await sendTelegram(env, "⛔ Akses ditolak. Chat ID kamu: <code>" + escapeHtml(chatId) + "</code>", chatId);
       return new Response("ok");
     }
@@ -207,7 +217,13 @@ async function handleTelegramWebhook(request, env) {
     var args = text.substring(cmd.length).trim();
 
     if (cmd === "/help" || cmd === "/start") {
-      var helpText = "🤖 <b>StreamBox Admin Bot</b>\n\n" +
+      var helpText = "🤖 <b>StreamBox Admin Bot</b>\n\n";
+      if (!hasConfiguredAdmin) {
+        helpText += "⚠️ <b>Admin chat ID belum dikonfigurasi.</b>\n" +
+          "Chat ID kamu: <code>" + escapeHtml(chatId) + "</code>\n" +
+          "Set env <code>TELEGRAM_CHAT_ID</code> atau <code>TELEGRAM_ADMIN_IDS</code> agar akses bisa dibatasi.\n\n";
+      }
+      helpText +=
         "📋 <b>Password Management:</b>\n" +
         "/addpass <code>password:YYYY-MM-DD</code> — Tambah password (tanggal expired)\n" +
         "/addpass <code>password:YYYY-MM-DD:3</code> — Tambah + limit 3 IP\n" +
@@ -362,33 +378,33 @@ async function handleTelegramWebhook(request, env) {
       await sendTelegram(env, "🚫 Semua IP (" + allIps.length + ") untuk password <code>" + args + "</code> telah di-kick!\n\n✅ Akses langsung diblokir.");
     }
     else if (cmd === "/broadcast") {
-  if (!env.ANALYTICS) {
-    await sendTelegram(env, "❌ Broadcast butuh binding KV <code>ANALYTICS</code> aktif.");
-    return new Response("ok");
-  }
-  if (!args) {
-    await sendTelegram(env, "❌ Format: /broadcast <code>pesan</code>");
-    return new Response("ok");
-  }
-  var broadcast = await saveBroadcastMessage(env, args, msg.from && (msg.from.username || msg.from.first_name) || "admin");
-  await sendTelegram(env, "📢 Broadcast diaktifkan!\n\nPesan:\n<code>" + escapeHtml(args) + "</code>\n\nID: <code>" + escapeHtml(broadcast.id) + "</code>");
-}
-else if (cmd === "/broadcastoff") {
-  await clearBroadcastMessage(env);
-  await sendTelegram(env, "📴 Broadcast berhasil dimatikan.");
-}
-else if (cmd === "/broadcaststatus") {
-  var activeBroadcast = await getBroadcastMessage(env);
-  if (!activeBroadcast) {
-    await sendTelegram(env, "ℹ️ Tidak ada broadcast yang aktif.");
-    return new Response("ok");
-  }
-  await sendTelegram(env,
-    "📢 <b>Broadcast Aktif</b>\n\n" +
-    "ID: <code>" + escapeHtml(activeBroadcast.id) + "</code>\n" +
-    "Dibuat: " + new Date(activeBroadcast.createdAt).toLocaleString("id-ID") + "\n" +
-    "Pesan:\n<code>" + escapeHtml(activeBroadcast.message) + "</code>");
-}
+      if (!env.ANALYTICS) {
+        await sendTelegram(env, "❌ Broadcast butuh binding KV <code>ANALYTICS</code> aktif.");
+        return new Response("ok");
+      }
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /broadcast <code>pesan</code>");
+        return new Response("ok");
+      }
+      var broadcast = await saveBroadcastMessage(env, args, msg.from && (msg.from.username || msg.from.first_name) || "admin");
+      await sendTelegram(env, "📢 Broadcast diaktifkan!\n\nPesan:\n<code>" + escapeHtml(args) + "</code>\n\nID: <code>" + escapeHtml(broadcast.id) + "</code>");
+    }
+    else if (cmd === "/broadcastoff") {
+      await clearBroadcastMessage(env);
+      await sendTelegram(env, "📴 Broadcast berhasil dimatikan.");
+    }
+    else if (cmd === "/broadcaststatus") {
+      var activeBroadcast = await getBroadcastMessage(env);
+      if (!activeBroadcast) {
+        await sendTelegram(env, "ℹ️ Tidak ada broadcast yang aktif.");
+        return new Response("ok");
+      }
+      await sendTelegram(env,
+        "📢 <b>Broadcast Aktif</b>\n\n" +
+        "ID: <code>" + escapeHtml(activeBroadcast.id) + "</code>\n" +
+        "Dibuat: " + new Date(activeBroadcast.createdAt).toLocaleString("id-ID") + "\n" +
+        "Pesan:\n<code>" + escapeHtml(activeBroadcast.message) + "</code>");
+    }
 
     return new Response("ok");
   } catch(e) {

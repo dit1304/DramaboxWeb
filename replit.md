@@ -66,7 +66,8 @@ The project maintains two parallel implementations:
 - Broadcasts are stored in Cloudflare KV (`tgbot:broadcast`) and shown once per logged-in browser/device
 - Passwords stored in Cloudflare KV (prefix: `tgbot:passwords`, `tgbot:ips:`, `tgbot:kicked:`)
 - Webhook secured via `X-Telegram-Bot-Api-Secret-Token` header (env: `TELEGRAM_WEBHOOK_SECRET`)
-- Required env vars: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- Required env vars: `TELEGRAM_BOT_TOKEN`
+- Admin allowlist env: `TELEGRAM_CHAT_ID` (single ID) or `TELEGRAM_ADMIN_IDS` (comma-separated multiple IDs)
 - Optional: `TELEGRAM_WEBHOOK_SECRET` for webhook signature verification
 
 ### Analytics (Optional)
