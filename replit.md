@@ -58,8 +58,12 @@ The project maintains two parallel implementations:
   - `/ips password` — View active IPs for a password
   - `/kick password IP` — Kick specific IP (immediately blocks access)
   - `/kickall password` — Kick all IPs for a password
+  - `/broadcast pesan` — Show a broadcast toast to all logged-in users
+  - `/broadcastoff` — Remove the active broadcast
+  - `/broadcaststatus` — Show the current broadcast payload
   - `/help` — Show command list
 - Notifications: Bot sends alerts on new IP login and blocked login attempts
+- Broadcasts are stored in Cloudflare KV (`tgbot:broadcast`) and shown once per logged-in browser/device
 - Passwords stored in Cloudflare KV (prefix: `tgbot:passwords`, `tgbot:ips:`, `tgbot:kicked:`)
 - Webhook secured via `X-Telegram-Bot-Api-Secret-Token` header (env: `TELEGRAM_WEBHOOK_SECRET`)
 - Required env vars: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
