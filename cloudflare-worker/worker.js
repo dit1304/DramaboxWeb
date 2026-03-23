@@ -107,6 +107,33 @@ async function saveKickedIPs(env, password, ips) {
   }
 }
 
+async function getBroadcastMessage(env) {
+  if (!env.ANALYTICS) return null;
+  try {
+    var data = await env.ANALYTICS.get("tgbot:broadcast", "json");
+    if (!data || typeof data.message !== "string") return null;
+    return data;
+  } catch(e) { return null; }
+}
+
+async function saveBroadcastMessage(env, message, author) {
+  if (!env.ANALYTICS) return null;
+  var now = Date.now();
+  var payload = {
+    id: String(now),
+    message: message,
+    author: author || "admin",
+    createdAt: now
+  };
+  await env.ANALYTICS.put("tgbot:broadcast", JSON.stringify(payload));
+  return payload;
+}
+
+async function clearBroadcastMessage(env) {
+  if (!env.ANALYTICS) return;
+  try { await env.ANALYTICS.delete("tgbot:broadcast"); } catch(e) {}
+}
+
 async function trackLoginIP(env, password, ip) {
   var sessions = await getIPSessions(env, password);
   var now = Date.now();
@@ -181,6 +208,10 @@ async function handleTelegramWebhook(request, env) {
         "/ips <code>password</code> — Lihat IP aktif\n" +
         "/kick <code>password IP</code> — Kick IP tertentu\n" +
         "/kickall <code>password</code> — Kick semua IP\n\n" +
+        "📢 <b>Broadcast:</b>\n" +
+        "/broadcast <code>pesan</code> — Tampilkan pengumuman ke semua user login\n" +
+        "/broadcastoff — Hapus broadcast aktif\n" +
+        "/broadcaststatus — Lihat broadcast aktif\n\n" +
         "ℹ️ Format tanggal: <code>2026-03-01</code>\n" +
         "ℹ️ Limit IP opsional (0 = unlimited)";
       await sendTelegram(env, helpText);
@@ -320,6 +351,34 @@ async function handleTelegramWebhook(request, env) {
       await saveIPSessions(env, args, []);
       if (allIps.length > 0) await saveKickedIPs(env, args, allIps);
       await sendTelegram(env, "🚫 Semua IP (" + allIps.length + ") untuk password <code>" + args + "</code> telah di-kick!\n\n✅ Akses langsung diblokir.");
+    }
+    else if (cmd === "/broadcast") {
+      if (!env.ANALYTICS) {
+        await sendTelegram(env, "❌ Broadcast butuh binding KV <code>ANALYTICS</code> aktif.");
+        return new Response("ok");
+      }
+      if (!args) {
+        await sendTelegram(env, "❌ Format: /broadcast <code>pesan</code>");
+        return new Response("ok");
+      }
+      var broadcast = await saveBroadcastMessage(env, args, msg.from && (msg.from.username || msg.from.first_name) || "admin");
+      await sendTelegram(env, "📢 Broadcast diaktifkan!\n\nPesan:\n<code>" + args + "</code>\n\nID: <code>" + broadcast.id + "</code>");
+    }
+    else if (cmd === "/broadcastoff") {
+      await clearBroadcastMessage(env);
+      await sendTelegram(env, "📴 Broadcast berhasil dimatikan.");
+    }
+    else if (cmd === "/broadcaststatus") {
+      var activeBroadcast = await getBroadcastMessage(env);
+      if (!activeBroadcast) {
+        await sendTelegram(env, "ℹ️ Tidak ada broadcast yang aktif.");
+        return new Response("ok");
+      }
+      await sendTelegram(env,
+        "📢 <b>Broadcast Aktif</b>\n\n" +
+        "ID: <code>" + activeBroadcast.id + "</code>\n" +
+        "Dibuat: " + new Date(activeBroadcast.createdAt).toLocaleString("id-ID") + "\n" +
+        "Pesan:\n<code>" + activeBroadcast.message + "</code>");
     }
 
     return new Response("ok");
@@ -524,6 +583,24 @@ export default {
         }
         return new Response(JSON.stringify({ active: false }), {
           headers: { "content-type": "application/json" }
+        });
+      }
+
+      if (url.pathname === "/broadcast-message") {
+        var bcCookie = getSessionCookie(request);
+        var bcResult = await verifySession(bcCookie, passwords, authSecret);
+        if (!bcResult || !bcResult.valid) {
+          return new Response(JSON.stringify({ active: false }), {
+            status: 401,
+            headers: { "content-type": "application/json" }
+          });
+        }
+        var broadcastData = await getBroadcastMessage(env);
+        return new Response(JSON.stringify({
+          active: !!broadcastData,
+          broadcast: broadcastData
+        }), {
+          headers: { "content-type": "application/json", "cache-control": "no-store" }
         });
       }
 
@@ -5074,16 +5151,49 @@ $("statsModal").onclick = (e) => {
   }).catch(function(){});
 })();
 
+// ========== BROADCAST ==========
+const seenBroadcasts = storage.get('seen_broadcasts') || {};
+
+function rememberBroadcast(id) {
+  if (!id) return;
+  seenBroadcasts[id] = Date.now();
+  const entries = Object.entries(seenBroadcasts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20);
+  const trimmed = {};
+  entries.forEach(([key, value]) => { trimmed[key] = value; });
+  storage.set('seen_broadcasts', trimmed);
+}
+
+async function checkBroadcast() {
+  try {
+    const res = await fetch('/broadcast-message', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.active || !data.broadcast || !data.broadcast.id || !data.broadcast.message) return;
+    if (seenBroadcasts[data.broadcast.id]) return;
+    rememberBroadcast(data.broadcast.id);
+    toast('📢 ' + data.broadcast.message);
+  } catch (err) {
+    console.warn('Broadcast check failed:', err);
+  }
+}
+
 // ========== INIT ==========
 loadStatistics();
 renderContinueWatching();
 renderFavorites();
 switchSource("melolo");
+checkBroadcast();
 
 // Refresh stats every 30 seconds
 setInterval(() => {
   loadStatistics();
 }, 30000);
+
+setInterval(() => {
+  checkBroadcast();
+}, 45000);
 </script>
 </body>
 </html>`;
